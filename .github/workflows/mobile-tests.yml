@@ -84,21 +84,57 @@ jobs:
             exit 1
           fi
           echo "Waiting for boot to complete..."
-          # Wait for boot to complete
-          for i in {1..300}; do
-            boot_completed=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || echo "")
+          # Wait for boot to complete (max 5 minutes = 150 iterations)
+          for i in {1..150}; do
+            # Check if emulator process is still running (find by port)
+            if ! pgrep -f "emulator.*5554" > /dev/null 2>&1; then
+              echo "ERROR: Emulator process died!"
+              exit 1
+            fi
+            # Get boot status with better error handling
+            boot_completed=$(adb shell getprop sys.boot_completed 2>&1 | tr -d '\r\n' || echo "error")
+            boot_anim=$(adb shell getprop init.svc.bootanim 2>&1 | tr -d '\r\n' || echo "error")
+            
+            # Show detailed status every 5 iterations, simple status every iteration
+            if [ $((i % 5)) -eq 0 ]; then
+              echo "Status ($i/150): boot_completed='$boot_completed', boot_anim='$boot_anim'"
+              adb devices -l
+            else
+              echo "Waiting... ($i/150) boot_completed='$boot_completed'"
+            fi
+            
             if [ "$boot_completed" = "1" ]; then
               echo "Boot completed!"
               break
             fi
-            echo "Boot not complete yet... ($i/300)"
+            
+            # After 2 minutes (60 iterations), start checking if device is responsive
+            if [ $i -ge 60 ]; then
+              # If boot animation stopped, check if device is actually ready
+              if [ "$boot_anim" = "stopped" ] || [ "$boot_anim" = "error" ]; then
+                echo "Boot animation stopped, checking if device is responsive..."
+                if adb shell "echo test" > /dev/null 2>&1; then
+                  echo "Device is responsive! Proceeding even though boot_completed='$boot_completed'"
+                  break
+                fi
+              fi
+            fi
+            
             sleep 2
           done
           # Final check
-          boot_completed=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || echo "")
+          boot_completed=$(adb shell getprop sys.boot_completed 2>&1 | tr -d '\r\n' || echo "error")
           if [ "$boot_completed" != "1" ]; then
-            echo "ERROR: Boot did not complete in time"
-            exit 1
+            echo "WARNING: sys.boot_completed is '$boot_completed' (expected '1')"
+            echo "Checking if device is actually ready..."
+            if adb shell echo "test" > /dev/null 2>&1; then
+              echo "Device is responsive, proceeding anyway..."
+            else
+              echo "ERROR: Device is not responsive"
+              adb devices -l
+              adb shell getprop | head -20
+              exit 1
+            fi
           fi
           echo "Emulator is ready!"
 
