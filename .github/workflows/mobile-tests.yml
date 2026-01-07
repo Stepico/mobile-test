@@ -62,7 +62,42 @@ jobs:
           emulator-port: 5554
           script: |
             echo "Waiting for emulator to be fully ready..."
+            # Wait for device to appear and be online
             adb wait-for-device
-            adb shell 'while [[ -z $(getprop sys.boot_completed | tr -d '\''\r'\'') ]]; do sleep 1; done'
+            echo "Device detected, waiting for ADB connection..."
+            # Wait for device to be online (not offline or unauthorized)
+            for i in {1..150}; do
+              device_state=$(adb get-state 2>/dev/null || echo "unknown")
+              if [ "$device_state" = "device" ]; then
+                echo "Device is online!"
+                break
+              fi
+              echo "Device state: $device_state, waiting... ($i/150)"
+              sleep 2
+            done
+            # Verify device is online
+            device_state=$(adb get-state 2>/dev/null || echo "unknown")
+            if [ "$device_state" != "device" ]; then
+              echo "ERROR: Device is not online. State: $device_state"
+              adb devices -l
+              exit 1
+            fi
+            echo "Waiting for boot to complete..."
+            # Wait for boot to complete
+            for i in {1..300}; do
+              boot_completed=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || echo "")
+              if [ "$boot_completed" = "1" ]; then
+                echo "Boot completed!"
+                break
+              fi
+              echo "Boot not complete yet... ($i/300)"
+              sleep 2
+            done
+            # Final check
+            boot_completed=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || echo "")
+            if [ "$boot_completed" != "1" ]; then
+              echo "ERROR: Boot did not complete in time"
+              exit 1
+            fi
             echo "Emulator is ready. Running tests..."
             npx wdio run wdio.conf.js
