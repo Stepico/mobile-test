@@ -39,6 +39,14 @@ jobs:
       - name: Install Appium globally
         run: npm install -g appium
 
+      - name: Clean up disk space
+        run: |
+          # Remove old AVDs if they exist
+          rm -rf ~/.android/avd/test.avd || true
+          # Clean up any temporary files
+          sudo apt-get clean
+          df -h
+
       - name: Launch emulator and run tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -47,11 +55,13 @@ jobs:
           arch: x86_64
           force-avd-creation: true
           avd-name: test
-          emulator-options: -no-window -no-audio
+          emulator-options: -no-window -no-audio -no-snapshot-save
           disable-animations: true
           emulator-boot-timeout: 600
           cores: 2
           emulator-port: 5554
+          ram-size: 2048
+          disk-size: 4096M
           script: |
             echo "Waiting for emulator to be fully ready..."
             adb wait-for-device
