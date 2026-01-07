@@ -1,0 +1,41 @@
+name: Mobile App Tests
+
+# Run daily at 6:00 AM UTC
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch: # optional: allows manual trigger
+
+jobs:
+  run-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+
+      - name: Set up Android SDK
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 33
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: true
+          emulator-options: -no-window -no-audio
+
+      - name: Start Appium server
+        run: |
+          npm install -g appium
+          nohup appium --port 4723 --log-level info &
+
+      - name: Run WDIO tests
+        run: npx wdio run wdio.conf.js
