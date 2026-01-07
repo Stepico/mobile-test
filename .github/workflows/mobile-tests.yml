@@ -170,24 +170,35 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Start Android emulator
+      - name: Install Appium globally
+        run: npm install -g appium
+
+      - name: Start Android emulator and run tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
           target: google_apis
           arch: x86_64
-          emulator-options: "-no-window"   # remove -no-audio if needed
+          emulator-options: "-no-window"
           force-avd-creation: true
           disable-animations: true
           emulator-boot-timeout: 600
-
-      - name: Install app
-        run: adb install -r app/diia-debug.apk
-
-      - name: Start Appium
-        run: |
-          npm install -g appium
-          appium --log-level info &
-
-      - name: Run tests
-        run: npx wdio run wdio.conf.js
+          script: |
+            echo "Waiting for emulator to be fully ready..."
+            adb wait-for-device
+            adb shell 'while [[ -z $(getprop sys.boot_completed | tr -d '\''\r'\'') ]]; do sleep 1; done'
+            echo "Emulator is ready!"
+            
+            echo "Installing app..."
+            adb install -r app/diia-debug.apk
+            
+            echo "Starting Appium server..."
+            appium --log-level info &
+            APPIUM_PID=$!
+            sleep 5
+            
+            echo "Running tests..."
+            npx wdio run wdio.conf.js
+            
+            echo "Stopping Appium..."
+            kill $APPIUM_PID 2>/dev/null || true
