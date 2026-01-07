@@ -29,12 +29,12 @@ jobs:
           mkdir -p $HOME/Android/cmdline-tools
           unzip cmdline-tools.zip -d $HOME/Android/cmdline-tools
           yes | $HOME/Android/cmdline-tools/cmdline-tools/bin/sdkmanager --licenses
-          $HOME/Android/cmdline-tools/cmdline-tools/bin/sdkmanager "platform-tools" "platforms;android-33" "system-images;android-33;google_apis;x86_64"
+          $HOME/Android/cmdline-tools/cmdline-tools/bin/sdkmanager "platform-tools" "platforms;android-30" "system-images;android-30;google_apis;x86_64" "emulator"
 
       - name: Set ANDROID_HOME and PATH
         run: |
           echo "ANDROID_HOME=$HOME/Android" >> $GITHUB_ENV
-          echo "$HOME/Android/platform-tools:$HOME/Android/cmdline-tools/cmdline-tools/bin:$PATH" >> $GITHUB_PATH
+          echo "$HOME/Android/platform-tools:$HOME/Android/cmdline-tools/cmdline-tools/bin:$HOME/Android/emulator:$PATH" >> $GITHUB_PATH
 
       - name: Install Appium globally
         run: npm install -g appium
@@ -50,18 +50,16 @@ jobs:
       - name: Launch emulator and run tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 33
+          api-level: 30
           target: google_apis
           arch: x86_64
           force-avd-creation: true
           avd-name: test
-          emulator-options: -no-window -no-audio -no-snapshot-save
+          emulator-options: -no-window -no-audio -no-snapshot-save -partition-size 2048
           disable-animations: true
           emulator-boot-timeout: 600
           cores: 2
           emulator-port: 5554
-          ram-size: 2048
-          disk-size: 4096M
           script: |
             echo "Waiting for emulator to be fully ready..."
             adb wait-for-device
