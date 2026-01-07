@@ -84,8 +84,8 @@ jobs:
             exit 1
           fi
           echo "Waiting for boot to complete..."
-          # Wait for boot to complete (max 5 minutes = 150 iterations)
-          for i in {1..150}; do
+          # Wait for boot to complete (max 4 minutes = 120 iterations)
+          for i in {1..120}; do
             # Check if emulator process is still running (find by port)
             if ! pgrep -f "emulator.*5554" > /dev/null 2>&1; then
               echo "ERROR: Emulator process died!"
@@ -95,12 +95,10 @@ jobs:
             boot_completed=$(adb shell getprop sys.boot_completed 2>&1 | tr -d '\r\n' || echo "error")
             boot_anim=$(adb shell getprop init.svc.bootanim 2>&1 | tr -d '\r\n' || echo "error")
             
-            # Show detailed status every 5 iterations, simple status every iteration
-            if [ $((i % 5)) -eq 0 ]; then
-              echo "Status ($i/150): boot_completed='$boot_completed', boot_anim='$boot_anim'"
+            # Show detailed status every 10 iterations
+            if [ $((i % 10)) -eq 0 ]; then
+              echo "Status ($i/120): boot_completed='$boot_completed', boot_anim='$boot_anim'"
               adb devices -l
-            else
-              echo "Waiting... ($i/150) boot_completed='$boot_completed'"
             fi
             
             if [ "$boot_completed" = "1" ]; then
@@ -108,13 +106,14 @@ jobs:
               break
             fi
             
-            # After 2 minutes (60 iterations), start checking if device is responsive
-            if [ $i -ge 60 ]; then
-              # If boot animation stopped, check if device is actually ready
-              if [ "$boot_anim" = "stopped" ] || [ "$boot_anim" = "error" ]; then
-                echo "Boot animation stopped, checking if device is responsive..."
-                if adb shell "echo test" > /dev/null 2>&1; then
-                  echo "Device is responsive! Proceeding even though boot_completed='$boot_completed'"
+            # After 90 seconds (45 iterations), start checking if device is responsive
+            if [ $i -ge 45 ]; then
+              echo "Checking if device is responsive (attempt $i)..."
+              # Try a simple command to see if device responds
+              if adb shell "echo test" > /dev/null 2>&1; then
+                # Try a more complex command to verify it's really ready
+                if adb shell "pm list packages" > /dev/null 2>&1; then
+                  echo "Device is responsive and package manager works! Proceeding even though boot_completed='$boot_completed'"
                   break
                 fi
               fi
