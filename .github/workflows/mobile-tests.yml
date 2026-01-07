@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v3
 
       - name: Set up Node.js
@@ -28,10 +28,13 @@ jobs:
           wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline-tools.zip
           mkdir -p $HOME/Android/cmdline-tools
           unzip cmdline-tools.zip -d $HOME/Android/cmdline-tools
-          export ANDROID_HOME=$HOME/Android
-          export PATH=$ANDROID_HOME/cmdline-tools/cmdline-tools/bin:$ANDROID_HOME/platform-tools:$PATH
-          yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-33" "system-images;android-33;google_apis;x86_64"
+          yes | $HOME/Android/cmdline-tools/cmdline-tools/bin/sdkmanager --licenses
+          $HOME/Android/cmdline-tools/cmdline-tools/bin/sdkmanager "platform-tools" "platforms;android-33" "system-images;android-33;google_apis;x86_64"
+
+      - name: Set ANDROID_HOME and PATH
+        run: |
+          echo "ANDROID_HOME=$HOME/Android" >> $GITHUB_ENV
+          echo "$HOME/Android/platform-tools:$HOME/Android/cmdline-tools/cmdline-tools/bin:$PATH" >> $GITHUB_PATH
 
       - name: Launch emulator
         uses: reactivecircus/android-emulator-runner@v2
