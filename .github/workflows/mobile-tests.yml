@@ -185,7 +185,9 @@ jobs:
           target: google_apis
           arch: x86_64
 
-          enable-hw-accel: true
+          # 🔑 THIS IS THE KEY LINE
+          disable-linux-hw-accel: false
+
           force-avd-creation: true
           disable-animations: true
           emulator-boot-timeout: 900
