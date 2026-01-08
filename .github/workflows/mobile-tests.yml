@@ -9,6 +9,9 @@ jobs:
   android-tests:
     runs-on: ubuntu-latest
 
+    env:
+      ANDROID_EMULATOR_WAIT_TIME_BEFORE_KILL: 10  # optional, faster shutdown
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -42,17 +45,11 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
           script: |
+            # wait until emulator fully boots
             timeout 300 sh -c 'until adb shell getprop sys.boot_completed | grep -m 1 1; do sleep 5; done'
 
+            # install APK
             adb install -r app/diia-debug.apk
 
-            npx appium --log-level info &
-            APPIUM_PID=$!
-            
+            # run tests — Appium service in WDIO will handle starting/killing Appium
             npx wdio run wdio.conf.js
-
-            kill $APPIUM_PID || true
-
-
-
-
