@@ -218,20 +218,20 @@
 #             echo "Stopping Appium..."
 #             kill $APPIUM_PID || true
 
-name: Mobile App Tests
+name: Android E2E Tests
 
 on:
   schedule:
-    - cron: '0 6 * * *'
+    - cron: '0 6 * * *'  # daily at 6 AM
   workflow_dispatch:
 
 jobs:
-  run-tests:
-    runs-on: macos-latest
+  android-emulator:
+    runs-on: ubuntu-latest
     timeout-minutes: 45
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Node.js
@@ -243,29 +243,27 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Appium and Android driver
+      - name: Install Appium & Android driver
         run: |
           npm install -g appium
           appium driver update uiautomator2
           appium -v
           appium driver list --installed
 
-      - name: Start Android emulator and run tests
+      - name: Start Android emulator & run tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 33
           target: google_apis
-          arch: arm64-v8a          # ✅ corrected value
+          arch: x86_64
           force-avd-creation: true
           disable-animations: true
           emulator-boot-timeout: 900
-
           emulator-options: >
             -no-window
             -no-audio
             -no-snapshot
             -gpu swiftshader_indirect
-
           script: |
             echo "Waiting for emulator to start..."
             adb wait-for-device
@@ -273,6 +271,7 @@ jobs:
             echo "Waiting for Android to fully boot..."
             adb shell 'while [[ "$(getprop sys.boot_completed | tr -d "\r")" != "1" ]]; do sleep 2; done'
 
+            echo "List connected devices:"
             adb devices
 
             echo "Installing APK..."
@@ -286,6 +285,7 @@ jobs:
             echo "Running E2E tests..."
             npx wdio run wdio.conf.js
 
-            echo "Stopping Appium..."
+            echo "Stopping Appium server..."
             kill $APPIUM_PID || true
+
 
