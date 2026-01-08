@@ -37,14 +37,16 @@ Part 2 - Set up auto-test framework
     13.2 Execute command: Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
     *Note in case second command returns 'A driver named "uiautomator2" is already installed. Did you mean to update? Run "appium driver update". See installed drivers with "appium driver list --installed".' then it means that it's already installed and no need for this command
 14. Clone this repository to your device
-15. [NOT NEEDED] Initialiaze Node project
+15. Install project dependencies
+    npm install
+16. [NOT NEEDED] Initialiaze Node project
     npm init -y
-16. Install test runner
+17. [NOT NEEDED] Install test runner
     npm install webdriverio @wdio/cli --save-dev
-17. [NOT NEEDED] Initialize webdriver
+18. [NOT NEEDED] Initialize webdriver
     npx wdio config
-18. Start Android Emulator (From Android Studio)
-19. Confirm device
+19. Start Android Emulator (From Android Studio)
+20. Confirm device
     adb devices
     *Note* In case the output of the command is adb: command not found then likely you need to set it to the PATH environment variable (for User)
     19.1 In Android Studio File → Settings
