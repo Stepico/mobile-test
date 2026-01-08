@@ -257,9 +257,16 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
+          arch: x86              # important: must be x86 for Ubuntu
+          force-avd-creation: true
           script: |
+            # wait until emulator fully boots
+            timeout 300 sh -c 'until adb shell getprop sys.boot_completed | grep -m 1 1; do sleep 5; done'
+
+            # install APK and start Appium tests
             adb install -r app/diia-debug.apk
             appium --log-level info &
             npx wdio run wdio.conf.js
+
 
 
