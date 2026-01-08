@@ -1,223 +1,3 @@
-# name: Mobile App Tests
-
-# on:
-#   schedule:
-#     - cron: '0 6 * * *'
-#   workflow_dispatch:
-
-# jobs:
-#   run-tests:
-#     runs-on: ubuntu-latest
-
-#     steps:
-#       - name: Checkout repo
-#         uses: actions/checkout@v3
-
-#       - name: Set up Node.js
-#         uses: actions/setup-node@v3
-#         with:
-#           node-version: '20'
-
-#       - name: Install dependencies
-#         run: npm ci
-
-#       - name: Install Android SDK + platform-tools
-#         run: |
-#           sudo apt-get update
-#           sudo apt-get install -y unzip wget openjdk-17-jdk
-#           wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline-tools.zip
-#           mkdir -p $HOME/Android/cmdline-tools
-#           unzip cmdline-tools.zip -d $HOME/Android/cmdline-tools
-#           yes | $HOME/Android/cmdline-tools/cmdline-tools/bin/sdkmanager --licenses
-#           $HOME/Android/cmdline-tools/cmdline-tools/bin/sdkmanager "platform-tools" "platforms;android-30" "system-images;android-30;google_apis;x86_64" "emulator"
-
-#       - name: Set ANDROID_HOME and PATH
-#         run: |
-#           echo "ANDROID_HOME=$HOME/Android" >> $GITHUB_ENV
-#           echo "$HOME/Android/platform-tools:$HOME/Android/cmdline-tools/cmdline-tools/bin:$HOME/Android/emulator:$PATH" >> $GITHUB_PATH
-
-#       - name: Install Appium globally
-#         run: npm install -g appium
-
-#       - name: Clean up disk space
-#         run: |
-#           # Remove old AVDs if they exist
-#           rm -rf ~/.android/avd/test.avd || true
-#           # Clean up any temporary files
-#           sudo apt-get clean
-#           df -h
-
-#       - name: Create AVD
-#         run: |
-#           echo "no" | $HOME/Android/cmdline-tools/cmdline-tools/bin/avdmanager create avd -n test -k "system-images;android-30;google_apis;x86_64" -d "pixel_5" --force
-
-#       - name: Start ADB server
-#         run: adb start-server
-
-#       - name: Launch emulator
-#         run: |
-#           $HOME/Android/emulator/emulator -avd test -port 5554 -no-window -no-audio -no-snapshot-save -partition-size 2048 -no-metrics -accel off &
-#           EMULATOR_PID=$!
-#           echo "EMULATOR_PID=$EMULATOR_PID" >> $GITHUB_ENV
-
-#       - name: Wait for emulator to be ready
-#         run: |
-#           echo "Waiting for emulator to boot..."
-#           # Wait for device to appear
-#           timeout 300 adb wait-for-device
-#           echo "Device detected, waiting for ADB to be online..."
-#           # Wait for device to be online (not offline)
-#           for i in {1..150}; do
-#             device_state=$(adb get-state 2>/dev/null || echo "unknown")
-#             if [ "$device_state" = "device" ]; then
-#               echo "Device is online!"
-#               break
-#             fi
-#             echo "Device state: $device_state, waiting... ($i/150)"
-#             sleep 2
-#           done
-#           # Verify device is online
-#           device_state=$(adb get-state 2>/dev/null || echo "unknown")
-#           if [ "$device_state" != "device" ]; then
-#             echo "ERROR: Device is not online. State: $device_state"
-#             adb devices -l
-#             exit 1
-#           fi
-#           echo "Waiting for boot to complete..."
-#           # Wait for boot to complete (max 4 minutes = 120 iterations)
-#           for i in {1..120}; do
-#             # Check if emulator process is still running (find by port)
-#             if ! pgrep -f "emulator.*5554" > /dev/null 2>&1; then
-#               echo "ERROR: Emulator process died!"
-#               exit 1
-#             fi
-#             # Get boot status with better error handling
-#             boot_completed=$(adb shell getprop sys.boot_completed 2>&1 | tr -d '\r\n' || echo "error")
-#             boot_anim=$(adb shell getprop init.svc.bootanim 2>&1 | tr -d '\r\n' || echo "error")
-            
-#             # Show detailed status every 10 iterations
-#             if [ $((i % 10)) -eq 0 ]; then
-#               echo "Status ($i/120): boot_completed='$boot_completed', boot_anim='$boot_anim'"
-#               adb devices -l
-#             fi
-            
-#             if [ "$boot_completed" = "1" ]; then
-#               echo "Boot completed!"
-#               break
-#             fi
-            
-#             # After 90 seconds (45 iterations), start checking if device is responsive
-#             if [ $i -ge 45 ]; then
-#               echo "Checking if device is responsive (attempt $i)..."
-#               # Try a simple command to see if device responds
-#               if adb shell "echo test" > /dev/null 2>&1; then
-#                 # Try a more complex command to verify it's really ready
-#                 if adb shell "pm list packages" > /dev/null 2>&1; then
-#                   echo "Device is responsive and package manager works! Proceeding even though boot_completed='$boot_completed'"
-#                   break
-#                 fi
-#               fi
-#             fi
-            
-#             sleep 2
-#           done
-#           # Final check
-#           boot_completed=$(adb shell getprop sys.boot_completed 2>&1 | tr -d '\r\n' || echo "error")
-#           if [ "$boot_completed" != "1" ]; then
-#             echo "WARNING: sys.boot_completed is '$boot_completed' (expected '1')"
-#             echo "Checking if device is actually ready..."
-#             if adb shell echo "test" > /dev/null 2>&1; then
-#               echo "Device is responsive, proceeding anyway..."
-#             else
-#               echo "ERROR: Device is not responsive"
-#               adb devices -l
-#               adb shell getprop | head -20
-#               exit 1
-#             fi
-#           fi
-#           echo "Emulator is ready!"
-
-#       - name: Run tests
-#         run: npx wdio run wdio.conf.js
-
-#       - name: Stop emulator
-#         if: always()
-#         run: |
-#           adb -s emulator-5554 emu kill || true
-#           kill $EMULATOR_PID 2>/dev/null || true
-
-# SECOND ATTEMPT
-# name: Mobile App Tests
-
-# on:
-#   schedule:
-#     - cron: '0 6 * * *'
-#   workflow_dispatch:
-
-# jobs:
-#   run-tests:
-#     runs-on: ubuntu-latest
-#     timeout-minutes: 45
-
-#     steps:
-#       - name: Checkout repo
-#         uses: actions/checkout@v4
-
-#       - name: Set up Node.js
-#         uses: actions/setup-node@v4
-#         with:
-#           node-version: '20'
-#           cache: 'npm'
-
-#       - name: Install dependencies
-#         run: npm ci
-
-#       - name: Install Appium and Android driver
-#         run: |
-#           npm install -g appium
-#           appium driver update uiautomator2
-#           appium -v
-#           appium driver list --installed
-
-#       - name: Start Android emulator and run tests
-#         uses: reactivecircus/android-emulator-runner@v2
-#         with:
-#           api-level: 30
-#           target: google_apis
-#           arch: x86_64
-
-#           # 🔑 THIS IS THE KEY LINE
-#           disable-linux-hw-accel: false
-
-#           force-avd-creation: true
-#           disable-animations: true
-#           emulator-boot-timeout: 900
-
-#           emulator-options: >
-#             -no-window
-#             -no-audio
-#             -no-snapshot
-#             -gpu swiftshader_indirect
-
-#           script: |
-#             adb wait-for-device
-
-#             echo "Waiting for Android to fully boot..."
-#             adb shell 'while [[ "$(getprop sys.boot_completed | tr -d "\r")" != "1" ]]; do sleep 2; done'
-
-#             adb devices
-
-#             adb install -r app/diia-debug.apk
-
-#             appium --log-level info &
-#             APPIUM_PID=$!
-#             sleep 15
-
-#             npx wdio run wdio.conf.js
-
-#             echo "Stopping Appium..."
-#             kill $APPIUM_PID || true
-
 name: Mobile App Tests
 
 on:
@@ -257,19 +37,22 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
-          arch: x86               # must be x86 for Ubuntu/KVM
-          target: google_apis     # important fix!
+          arch: x86
+          target: google_apis
           force-avd-creation: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
           script: |
-            # wait until emulator fully boots
             timeout 300 sh -c 'until adb shell getprop sys.boot_completed | grep -m 1 1; do sleep 5; done'
 
-            # install APK and start Appium tests
             adb install -r app/diia-debug.apk
-            appium --log-level info &
+
+            npx appium --log-level info &
+            APPIUM_PID=$!
+            
             npx wdio run wdio.conf.js
+
+            kill $APPIUM_PID || true
 
 
 
