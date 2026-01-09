@@ -106,6 +106,7 @@ describe('Diia app test suite', () => {
         await menuBtn.click();
 
         const signoutBtn = getElementByText('Вийти');
+        await signoutBtn.waitForDisplayed({ timeout: 10000 });
         await signoutBtn.click();
 
         const confirmSignoutBtn = getElementByText('ВИЙТИ');
