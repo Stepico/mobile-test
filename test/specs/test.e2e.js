@@ -1,53 +1,123 @@
 const { expect, driver } = require('@wdio/globals')
+const { 
+    getElementByText,
+    getElementByAccessibilityId,
+    authorize,
+    login,
+    assertGreeting,
+    restart
+} = require('../../helper');
 
-describe('Open Diia app', () => {
-    it('should open the Diia app and wait 5 seconds', async () => {
-        // await driver.startActivity(
-        //     'ua.gov.diia.opensource',
-        //     'ua.gov.diia.opensource.VendorActivity'
-        // );
+describe('Diia app test suite', () => {
+    it('user should be able to authorize in the app for the first time', async () => {
+        await authorize('0');
+    
+        await assertGreeting();
+    });
 
-        const loginWithNBU = await $('android=new UiSelector().text("BankID HБУ")');
-        await loginWithNBU.click();
+    it('user should be able to log in to the app', async () => {
+        await restart();
 
-        const bankNadiia = await $('android=new UiSelector().text("Банк НаДія")');
-        await bankNadiia.click();
+        await login('0');
 
-        const tokenInput = await $('//android.widget.EditText[@resource-id="tokenInputField"]');
+        await assertGreeting();
+    });
 
-        await tokenInput.waitForExist({ timeout: 10000 });
-        await tokenInput.waitForDisplayed({ timeout: 10000 });
+    it('user should be able to use "Forgot code" feature', async () => {
+        await restart();
 
-        await tokenInput.click();
-        await tokenInput.setValue('F0571FBF3FD94EE4E56DE58861126');
+        const forgotCodeBtn = getElementByText("Не пам'ятаю код для входу");
+        await forgotCodeBtn.click();
 
-        const signinBtn = await $('android=new UiSelector().text("SignIn")');
-        await signinBtn.click();
+        const confirmAuthorize = getElementByText('Авторизуватися');
+        await confirmAuthorize.click();
 
-        const nextBtn = await $('android=new UiSelector().text("Далі")');
-        await nextBtn.click();
-        
-        // const codeScreenHeader = await $('~Придумайте код з 4 цифр');
-        // await expect(codeScreenHeader).toBeDisplayed();
+        await authorize('1');
 
-        const zeroCodeButton = await $('android=new UiSelector().text("0")');
+        await assertGreeting();
+    });
+
+    it('user should be able to log in with new code after changing it (via "Forgot code" feature)', async () => {
+        await restart();
+
+        await login('1');
+
+        await assertGreeting();
+    });
+
+    it('user should be able to change pin code (via Settings)', async () => {
+        const menuBtn = getElementByAccessibilityId('МенюЄ нові повідомлення');
+        await menuBtn.click();
+
+        const settingsBtn = getElementByAccessibilityId('Налаштування');
+        await settingsBtn.click();
+
+        const changePinBtn = await $('id=ua.gov.diia.opensource:id/tv_change_app_pin');
+        await changePinBtn.click();
+
+        const codeButton = getElementByText('1');
+
+        const repeatCodeScreenHeader = getElementByAccessibilityId('Повторіть\nкод з 4 цифр');
+        await expect(repeatCodeScreenHeader).toBeDisplayed();
+    
         for (let i = 0; i < 4; i++) {
-            await zeroCodeButton.click();
+            await codeButton.click();
         }
 
-        // const repeatCodeScreenHeader = await $('~Повторіть код з 4 цифр');
-        // await expect(repeatCodeScreenHeader).toBeDisplayed();
+        const newcodeButton = getElementByText('2');
+
+        const codeScreenHeader = getElementByAccessibilityId('Новий\nкод з 4 цифр');
+        await expect(codeScreenHeader).toBeDisplayed();
 
         for (let i = 0; i < 4; i++) {
-            await zeroCodeButton.click();
+            await newcodeButton.click();
         }
 
-        const greeting = await driver.$('~Привіт, Надія 👋');
-        await expect(greeting).toBeDisplayed();
+        const repeatnewCodeScreenHeader = getElementByAccessibilityId('Повторіть\nкод з 4 цифр');
+        await expect(repeatnewCodeScreenHeader).toBeDisplayed();
+    
+        for (let i = 0; i < 4; i++) {
+            await newcodeButton.click();
+        }
 
-        const documentsButton = await driver.$('~Документи');
-        await documentsButton.click();
+        const codeChangedTitle = getElementByText('Код змінено');
+        await expect(codeChangedTitle).toBeDisplayed();
 
-        await driver.pause(5000);
+        const codeChangedMsg = getElementByText('Ви змінили код для входу у застосунок Дія.');
+        await expect(codeChangedMsg).toBeDisplayed();
+
+        const thankBtn = getElementByText('Дякую');
+        await thankBtn.click();
+
+        const settingsHeader = await $('id=ua.gov.diia.opensource:id/tv_settings_title');
+        await expect(settingsHeader).toBeDisplayed();
+    });
+
+    it('user should be able to login with new pin (after changing it via Settings)', async () => {
+        await restart();
+
+        await login('2');
+
+        await assertGreeting();
+    });
+
+    it('user should be able to sign out from the app', async () => {
+        const menuBtn = getElementByAccessibilityId('МенюЄ нові повідомлення');
+        await menuBtn.click();
+
+        const signoutBtn = getElementByText('Вийти');
+        await signoutBtn.click();
+
+        const confirmSignoutBtn = getElementByText('ВИЙТИ');
+        await confirmSignoutBtn.click();
+
+        const loginWithNBU = getElementByText('BankID HБУ');
+        await expect(loginWithNBU).toBeDisplayed();
+    });
+
+    it('user should be able to authorize to the app after sign out', async () => {
+        await authorize('3');
+
+        await assertGreeting();
     });
 });
