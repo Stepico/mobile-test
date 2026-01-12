@@ -22,7 +22,7 @@ export async function authorize(codeDigit) {
     const tokenInput = await $('//android.widget.EditText[@resource-id="tokenInputField"]');
 
     await tokenInput.click();
-    await tokenInput.setValue('B322F2E0FB8181467AF63FFB879D5');
+    await tokenInput.setValue('B7B5908CFBA2DBDA1BE9');
 
     const signinBtn = getElementByText('SignIn');
     await signinBtn.click();
@@ -78,7 +78,7 @@ export async function enterPinCode(codeDigit) {
 // ASSERTIONS
 
 export async function assertGreeting() {
-    const greeting = getElementByAccessibilityId('Привіт, Надія 👋');
+    const greeting = getElementByAccessibilityId('Привіт, Віктор 👋');
     await expect(greeting).toBeDisplayed();
 }
 
@@ -92,4 +92,43 @@ export async function assertPopup(title = '', msg = '') {
         const popupMsg = getElementByText(msg);
         await expect(popupMsg).toBeDisplayed();
     }
+}
+
+// OTHER
+
+export async function getContainer(resourceId) {
+    const container = driver.$(
+        'android=new UiScrollable(new UiSelector().scrollable(true))' +
+        `.scrollIntoView(new UiSelector().resourceId("${resourceId}"))`
+    );
+
+    await container.waitForDisplayed({ 
+        timeout: 10000,
+        timeoutMsg: `Container ${resourceId} not found after scrolling`
+    });
+    
+    return container;
+}
+
+export async function findTextViewByText(container, expectedText, normalizeNewlines = true) {
+    const textViews = await container.$$('android.widget.TextView');
+    
+    for (const textView of textViews) {
+        const text = await textView.getText();
+        const normalizedText = normalizeNewlines ? text.replace(/\n/g, ' ').trim() : text.trim();
+        const normalizedExpected = normalizeNewlines ? expectedText.replace(/\n/g, ' ').trim() : expectedText.trim();
+        
+        if (normalizedText === normalizedExpected) {
+            return textView;
+        }
+    }
+    
+    throw new Error(`No TextView found with text "${expectedText}" in container`);
+}
+
+export async function assertTextView(resourceId, text) {
+    const container = await getContainer(resourceId);
+
+    const textView = await findTextViewByText(container, text);
+    await expect(textView).toBeDisplayed();
 }

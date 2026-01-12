@@ -1,4 +1,4 @@
-const { driver } = require('@wdio/globals');
+const { driver, expect } = require('@wdio/globals');
 
 const { 
     getElementByText,
@@ -6,10 +6,13 @@ const {
     authorize,
     login,
     assertGreeting,
-    restart
+    restart,
+    findTextViewByText,
+    getContainer,
+    assertTextView
 } = require('../../helper');
 
-describe.only('Docs test suite', () => {
+describe('Docs test suite', () => {
     it('user should be able to observe driver license document', async () => {
         await authorize('0');
     
@@ -17,5 +20,22 @@ describe.only('Docs test suite', () => {
 
         const documentsTab = getElementByAccessibilityId('Документи')
         await documentsTab.click();
+
+        const docTitle = getElementByText('Посвідчення водія');
+        await expect(docTitle).toBeDisplayed();
+
+        await assertTextView('birth_date_driver-license_ua', 'Дата народження:');
+
+        await assertTextView('birth_date_driver-license_ua', '06.01.1996');
+        
+        await assertTextView('category_driver-license_ua', 'Категорія:');
+
+        await assertTextView('category_driver-license_ua', 'B');
+
+        await assertTextView('doc_number_driver-license_ua', 'Номер документа:');
+
+        await assertTextView('doc_number_driver-license_ua', 'РОЕ886082');
+
+        await assertTextView('full_name_ua', 'Михальченко Віктор Олександрович');
     });
 });
