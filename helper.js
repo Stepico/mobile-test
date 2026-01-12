@@ -34,27 +34,19 @@ export async function authorize(codeDigit) {
     const codeScreenHeader = getElementByAccessibilityId('Придумайте\nкод з 4 цифр');
     await expect(codeScreenHeader).toBeDisplayed();
 
-    const codeButton = getElementByText(`${codeDigit}`);
-    for (let i = 0; i < 4; i++) {
-        await codeButton.click();
-    }
+    await enterPinCode(codeDigit);
 
     const repeatCodeScreenHeader = getElementByAccessibilityId('Повторіть\nкод з 4 цифр');
     await expect(repeatCodeScreenHeader).toBeDisplayed();
 
-    for (let i = 0; i < 4; i++) {
-        await codeButton.click();
-    }
+    await enterPinCode(codeDigit);
 }
 
 export async function login(codeDigit) {
     const codeScreenHeader = getElementByText('Код для входу');
     await expect(codeScreenHeader).toBeDisplayed();
 
-    const codeButton = getElementByText(`${codeDigit}`);
-    for (let i = 0; i < 4; i++) {
-        await codeButton.click();
-    }
+    await enterPinCode(codeDigit);
 }
 
 export async function restart() {
@@ -76,9 +68,28 @@ export async function restart() {
     );
 }
 
+export async function enterPinCode(codeDigit) {
+    const codeButton = getElementByText(`${codeDigit}`);
+    for (let i = 0; i < 4; i++) {
+        await codeButton.click();
+    }
+}
+
 // ASSERTIONS
 
 export async function assertGreeting() {
     const greeting = getElementByAccessibilityId('Привіт, Надія 👋');
     await expect(greeting).toBeDisplayed();
+}
+
+export async function assertPopup(title = '', msg = '') {
+    if (title) {
+        const popupTitle = getElementByText(title);
+        await expect(popupTitle).toBeDisplayed();
+    }
+
+    if (msg) {
+        const popupMsg = getElementByText(msg);
+        await expect(popupMsg).toBeDisplayed();
+    }
 }

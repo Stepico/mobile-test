@@ -1,14 +1,17 @@
-const { expect, driver } = require('@wdio/globals')
+const { expect, driver } = require('@wdio/globals');
+
 const { 
     getElementByText,
     getElementByAccessibilityId,
     authorize,
     login,
     assertGreeting,
-    restart
+    assertPopup,
+    restart,
+    enterPinCode
 } = require('../../helper');
 
-describe('Diia app test suite', () => {
+describe('Auth test suite', () => {
     it('user should be able to authorize in the app for the first time', async () => {
         await authorize('0');
     
@@ -55,36 +58,25 @@ describe('Diia app test suite', () => {
         const changePinBtn = await $('id=ua.gov.diia.opensource:id/tv_change_app_pin');
         await changePinBtn.click();
 
-        const codeButton = getElementByText('1');
-
         const repeatCodeScreenHeader = getElementByAccessibilityId('Повторіть\nкод з 4 цифр');
         await expect(repeatCodeScreenHeader).toBeDisplayed();
-    
-        for (let i = 0; i < 4; i++) {
-            await codeButton.click();
-        }
 
-        const newcodeButton = getElementByText('2');
+        await enterPinCode('1');
 
         const codeScreenHeader = getElementByAccessibilityId('Новий\nкод з 4 цифр');
         await expect(codeScreenHeader).toBeDisplayed();
 
-        for (let i = 0; i < 4; i++) {
-            await newcodeButton.click();
-        }
+        await enterPinCode('2');
 
         const repeatnewCodeScreenHeader = getElementByAccessibilityId('Повторіть\nкод з 4 цифр');
         await expect(repeatnewCodeScreenHeader).toBeDisplayed();
-    
-        for (let i = 0; i < 4; i++) {
-            await newcodeButton.click();
-        }
 
-        const codeChangedTitle = getElementByText('Код змінено');
-        await expect(codeChangedTitle).toBeDisplayed();
+        await enterPinCode('2');
 
-        const codeChangedMsg = getElementByText('Ви змінили код для входу у застосунок Дія.');
-        await expect(codeChangedMsg).toBeDisplayed();
+        await assertPopup(
+            'Код змінено',
+            'Ви змінили код для входу у застосунок Дія.'
+        );
 
         const thankBtn = getElementByText('Дякую');
         await thankBtn.click();
@@ -123,6 +115,26 @@ describe('Diia app test suite', () => {
 
     it('user should be able to authorize to the app after sign out', async () => {
         await authorize('3');
+
+        await assertGreeting();
+    });
+
+    it('user should be able to reauthorize after 3 not successful pin code inputs', async () => {
+        await restart();
+
+        for (let i = 0; i < 3; ++i) {
+            await login('4');
+        }
+
+        await assertPopup(
+            'Ви ввели неправильний код тричі',
+            'Пройдіть повторну авторизацію у застосунку'
+        );
+
+        const authorizeBtn = getElementByText('Авторизуватися');
+        await authorizeBtn.click();
+
+        await authorize('4');
 
         await assertGreeting();
     });
