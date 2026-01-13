@@ -126,14 +126,20 @@ export async function findTextViewByText(container, expectedText, normalizeNewli
     throw new Error(`No TextView found with text "${expectedText}" in container`);
 }
 
-export async function assertTextView(resourceId, text) {
+export async function assertTextView(resourceId, text, normalizeNewlines = true) {
     const container = await getContainer(resourceId);
 
-    driver.$(
-        'android=new UiScrollable(new UiSelector().scrollable(true))' +
-        `.scrollTextIntoView("${text}")`
+    const element = await driver.$(
+        'android=new UiScrollable(' +
+            `new UiSelector().resourceId("${resourceId}").scrollable(true))` +
+        `.scrollIntoView(new UiSelector().text("${text}"))`
     );
 
-    const textView = await findTextViewByText(container, text);
+    await element.waitForDisplayed({
+        timeout: 15000,
+        timeoutMsg: `Text "${text}" not visible in ${resourceId}`
+    });
+
+    const textView = await findTextViewByText(container, text, normalizeNewlines);
     await expect(textView).toBeDisplayed();
 }
