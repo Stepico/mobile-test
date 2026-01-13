@@ -24,7 +24,7 @@ describe('Docs test suite', () => {
         const docTitle = getElementByText('Посвідчення водія');
         await expect(docTitle).toBeDisplayed();
 
-        await assertTextView('birth_date_driver-license_ua', 'Дата\nнародження:');
+        await assertTextView('birth_date_driver-license_ua', 'Дата народження:');
 
         await assertTextView('birth_date_driver-license_ua', '06.01.1996');
         
@@ -32,10 +32,10 @@ describe('Docs test suite', () => {
 
         await assertTextView('category_driver-license_ua', 'B');
 
-        await assertTextView('doc_number_driver-license_ua', 'Номер\nдокумента:');
+        await assertTextView('doc_number_driver-license_ua', 'Номер документа:');
 
         await assertTextView('doc_number_driver-license_ua', 'РОЕ886082');
 
-        await assertTextView('full_name_ua', 'Михальченко\nВіктор\nОлександрович');
+        await assertTextView('full_name_ua', 'Михальченко Віктор Олександрович');
     });
 });
