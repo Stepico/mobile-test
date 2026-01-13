@@ -103,6 +103,8 @@ export async function scrollUntilVisible(selector, maxSwipes = 10) {
             return el;
         }
 
+        console.log('SWIPE-SWIPE');
+
         const { height, width } = await driver.getWindowRect();
 
         const startX = Math.floor(width / 2);
