@@ -37,8 +37,6 @@ describe('Docs test suite', () => {
     });
 
     it('user should be able to observe driver license document (full info)', async () => {
-        this.timeout(180000);
-
         const contextMenu = getElementByAccessibilityId('Контекстне меню')
         await contextMenu.click();
 
