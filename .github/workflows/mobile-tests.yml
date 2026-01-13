@@ -41,6 +41,7 @@ jobs:
           api-level: 30
           arch: x86
           target: google_apis
+          profile: pixel_4
           force-avd-creation: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
