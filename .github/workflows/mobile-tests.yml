@@ -1,8 +1,6 @@
 name: Mobile App Tests
 
 on:
-  schedule:
-    - cron: '0 6 * * *'
   workflow_dispatch:
 
 jobs:
@@ -42,6 +40,7 @@ jobs:
           arch: x86_64
           target: google_apis
           avd-name: medium-phone-api-31
+          profile: pixel_4
           force-avd-creation: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true

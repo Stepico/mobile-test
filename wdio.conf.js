@@ -153,12 +153,8 @@ exports.config = {
             const timestamp = Date.now();
 
             const screenshotPath = `./artifacts/screenshots/${safeName}-${timestamp}.png`;
-            const sourcePath = `./artifacts/pagesources/${safeName}-${timestamp}.xml`;
 
             await driver.saveScreenshot(screenshotPath);
-
-            const source = await driver.getPageSource();
-            fs.writeFileSync(sourcePath, source);
         }
     },
 
