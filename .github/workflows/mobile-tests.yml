@@ -38,10 +38,10 @@ jobs:
       - name: Start Android emulator and run tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 30
+          api-level: 31
           arch: x86
           target: google_apis
-          profile: pixel_4
+          avd-name: medium-phone-api-31
           force-avd-creation: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
