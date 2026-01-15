@@ -52,7 +52,7 @@ jobs:
             adb install -r app/diia-debug.apk
 
             # run tests — Appium service in WDIO will handle starting/killing Appium
-            npx wdio run wdio.conf.js --spec test/specs/auth.e2e.js,test/specs/docs.e2e.js
+            npx wdio run wdio.conf.js
 
       - name: Upload screenshots on failure
         if: failure()
