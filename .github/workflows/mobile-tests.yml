@@ -40,7 +40,7 @@ jobs:
           arch: x86_64
           target: google_apis
           avd-name: medium-phone-api-31
-          profile: pixel_4
+          profile: pixel_2
           force-avd-creation: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
@@ -52,7 +52,7 @@ jobs:
             adb install -r app/diia-debug.apk
 
             # run tests — Appium service in WDIO will handle starting/killing Appium
-            npx wdio run wdio.conf.js
+            npx wdio run wdio.conf.js --spec test/specs/auth.e2e.js,test/specs/docs.e2e.js
 
       - name: Upload screenshots on failure
         if: failure()

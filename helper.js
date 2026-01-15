@@ -16,7 +16,7 @@ export async function authorize(codeDigit) {
     const loginWithNBU = getElementByText('BankID HБУ');
     await loginWithNBU.click();
 
-    const bankNadiia = getElementByText('Банк НаДія');
+    const bankNadiia = getElementByAccessibilityId('Банк НаДія');
     await bankNadiia.click();
 
     const tokenInput = await $('//android.widget.EditText[@resource-id="tokenInputField"]');
@@ -82,16 +82,16 @@ export async function assertGreeting() {
     await expect(greeting).toBeDisplayed();
 }
 
-export async function assertPopup(title = '', msg = '') {
-    if (title) {
-        const popupTitle = getElementByText(title);
-        await expect(popupTitle).toBeDisplayed();
-    }
+export async function assertPopup(title, body) {
+    const container = await getContainer('android:id/content');
 
-    if (msg) {
-        const popupMsg = getElementByText(msg);
-        await expect(popupMsg).toBeDisplayed();
-    }
+    const textViews = await container.$$('android.widget.TextView');
+
+    const titleText = await textViews[0].getText();
+    const bodyText = await textViews[1].getText();
+
+    expect(titleText).toEqual(title);
+    expect(bodyText).toEqual(body);
 }
 
 // OTHER
@@ -141,25 +141,73 @@ export async function getContainer(resourceId) {
     return container;
 }
 
-export async function findTextViewByText(container, expectedText, normalizeNewlines = true) {
-    const textViews = await container.$$('android.widget.TextView');
+// export async function findTextViewByText(container, expectedText, normalizeText = true) {
+//     const textViews = await container.$$('android.widget.TextView');
+
+//     const foundTexts = [];
     
-    for (const textView of textViews) {
-        const text = await textView.getText();
-        const normalizedText = normalizeNewlines ? text.replace(/\n/g, ' ').trim() : text.trim();
-        const normalizedExpected = normalizeNewlines ? expectedText.replace(/\n/g, ' ').trim() : expectedText.trim();
+//     const normalize = normalizeText 
+//         ? (t) => t.replace(/\s+/g, ' ').trim() 
+//         : (t) => t.trim();
+
+//     const expectedNormalized = normalize(expectedText);
+
+//     for (const textView of textViews) {
+//         const rawText = await textView.getText();
+//         const normalizedText = normalize(rawText);
         
-        if (normalizedText === normalizedExpected) {
+//         if (normalizedText === expectedNormalized) {
+//             return textView;
+//         }
+
+//         foundTexts.push(normalizedText);
+//     }
+    
+//     throw new Error(
+//         `No TextView found with text "${expectedText}".\n` +
+//         `TextViews found (${foundTexts.length}):\n` +
+//         foundTexts.map(t => `  - "${t}"`).join('\n')
+//     );
+// }
+
+export async function findTextViewByText(resourceId, expectedText, normalizeText = true) {
+    const container = await getContainer(resourceId);
+    const textViews = await container.$$('android.widget.TextView');
+
+    const foundTexts = [];
+    
+    const normalize = normalizeText 
+        ? (t) => t.replace(/\s+/g, ' ').trim() 
+        : (t) => t.trim();
+
+    const expectedNormalized = normalize(expectedText);
+
+    for (const textView of textViews) {
+        const rawText = await textView.getText();
+        const normalizedText = normalize(rawText);
+        
+        if (normalizedText === expectedNormalized) {
             return textView;
         }
+
+        foundTexts.push(normalizedText);
     }
     
-    throw new Error(`No TextView found with text "${expectedText}" in container`);
+    throw new Error(
+        `No TextView found with text "${expectedText}".\n` +
+        `TextViews found (${foundTexts.length}):\n` +
+        foundTexts.map(t => `  - "${t}"`).join('\n')
+    );
 }
 
-export async function assertTextView(resourceId, text, normalizeNewlines = true) {
-    const container = await getContainer(resourceId);
+// export async function assertTextView(resourceId, text, normalizeText = true) {
+//     const container = await getContainer(resourceId);
 
-    const textView = await findTextViewByText(container, text, normalizeNewlines);
+//     const textView = await findTextViewByText(container, text, normalizeText);
+//     await expect(textView).toBeDisplayed();
+// }
+
+export async function assertTextView(resourceId, text, normalizeText = true) {
+    const textView = await findTextViewByText(resourceId, text, normalizeText);
     await expect(textView).toBeDisplayed();
 }

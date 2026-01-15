@@ -1,11 +1,4 @@
 const path = require('path');
-const fs = require('fs');
-
-function ensureDir(dir) {
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-    }
-}
 
 exports.config = {
     //
@@ -141,22 +134,6 @@ exports.config = {
     // The only one supported by default is 'dot'
     // see also: https://webdriver.io/docs/dot-reporter
     reporters: ['spec'],
-
-    before: function (capabilities, specs) {
-        ensureDir('./artifacts/screenshots');
-        ensureDir('./artifacts/pagesources');
-    },
-
-    afterTest: async function (test, context, { passed }) {
-        if (!passed) {
-            const safeName = test.title.replace(/\s+/g, '_');
-            const timestamp = Date.now();
-
-            const screenshotPath = `./artifacts/screenshots/${safeName}-${timestamp}.png`;
-
-            await driver.saveScreenshot(screenshotPath);
-        }
-    },
 
     // Options to be passed to Mocha.
     // See the full list at http://mochajs.org/
