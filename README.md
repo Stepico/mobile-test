@@ -39,9 +39,9 @@ java -version
 ```
 
 *Note:* In case it's not installed – you should install it (you can do it here [https://adoptium.net/temurin/releases](https://adoptium.net/temurin/releases)), it was tested under **JDK 17**
-*Note:* In case even after installing Java the command `java -version` still returns that the term **`java`** is not recognized, then you need to set environment variables (for User)
+*Note:* In case even after installing Java the command `java -version` still returns that the term **`java`** is not recognized, then you need to set environment variables (for User). You can follow steps 12.1 - 12.3 below:
 
-### 12.1 Add Java to PATH (User)
+12.1 Add Java to PATH (User)
 
 Add to **PATH** environment variable the path to the **bin** folder of your Java installation
 Example:
@@ -50,7 +50,7 @@ Example:
 C:\Program Files\Eclipse Adoptium\jdk-17.0.9-hotspot\bin
 ```
 
-### 12.2 Add JAVA_HOME variable (User)
+12.2 Add JAVA_HOME variable (User)
 
 * **Name:** `JAVA_HOME`
 * **Value:** `<path_to_your_java>`
@@ -60,7 +60,7 @@ C:\Program Files\Eclipse Adoptium\jdk-17.0.9-hotspot\bin
 C:\Program Files\Eclipse Adoptium\jdk-17.0.9-hotspot
 ```
 
-### 12.3 Restart terminal and verify Java again
+12.3 Restart terminal and verify Java again
 
 13. Install test framework and its driver
 
@@ -70,11 +70,11 @@ appium driver install uiautomator2
 ```
 
 *Note:* In case the second command returns:
-`cannot be loaded because running scripts is disabled on this system...`
+`cannot be loaded because running scripts is disabled on this system...` you can follow steps 13.1 - 13.2 below:
 
-#### 13.1 Open **PowerShell** (Windows) as **Administrator**
+13.1 Open **PowerShell** (Windows) as **Administrator**
 
-#### 13.2 Execute command:
+13.2 Execute command:
 
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
@@ -99,13 +99,13 @@ npm install
 adb devices
 ```
 
-*Note:* In case the output of the command is `adb: command not found`, then you likely need to add it to the **PATH** environment variable (for User)
+*Note:* In case the output of the command is `adb: command not found`, then you likely need to add it to the **PATH** environment variable (for User). You can follow steps 17.1 - 17.4 below:
 
-### 17.1 Open Android Studio → **File → Settings**
+17.1 Open Android Studio → **File → Settings**
 
-### 17.2 In the search bar write **SDK**
+17.2 In the search bar write **SDK**
 
-### 17.3 Copy the **Android SDK Location** and add `\platform-tools` at the end
+17.3 Copy the **Android SDK Location** and add `\platform-tools` at the end
 
 Example:
 
@@ -113,7 +113,7 @@ Example:
 C:\Users\<your_user>\AppData\Local\Android\Sdk\platform-tools
 ```
 
-### 17.4 After saving changes restart Android Studio and all terminals
+17.4 After saving changes restart Android Studio and all terminals
 
 ---
 
@@ -134,16 +134,16 @@ npx wdio run wdio.conf.js
 *Note:* In case you encounter error:
 `ERROR webdriver: WebDriverError: Neither ANDROID_HOME nor ANDROID_SDK_ROOT environment variable was exported`
 
-Then you should set them as environment variables (for User)
+Then you should set them as environment variables (for User). You can follow steps 19.1 - 19.3 below:
 
-### 19.1 Add variable
+19.1 Add variable
 
 * **Name:** `ANDROID_HOME`
 * **Value:** `<value_from_step_17.3_without_platform_tools>`
 
-### 19.2 Add variable
+19.2 Add variable
 
 * **Name:** `ANDROID_SDK_ROOT`
 * **Value:** `<value_from_step_17.3_without_platform_tools>`
 
-### 19.3 Restart terminal
+19.3 Restart terminal
