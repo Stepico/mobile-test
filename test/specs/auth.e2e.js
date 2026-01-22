@@ -12,12 +12,15 @@ const {
 } = require('../../helper');
 
 describe('Auth test suite', () => {
+
+    // Test-case #1.1
     it('user should be able to authorize in the app for the first time', async () => {
         await authorize('0');
     
         await assertGreeting();
     });
 
+    // Test-case #1.2
     it('user should be able to log in to the app', async () => {
         await restart();
 
@@ -26,6 +29,7 @@ describe('Auth test suite', () => {
         await assertGreeting();
     });
 
+    // Test-case #1.3
     it('user should be able to use "Forgot code" feature', async () => {
         await restart();
 
@@ -40,6 +44,7 @@ describe('Auth test suite', () => {
         await assertGreeting();
     });
 
+    // Test-case #1.4
     it('user should be able to log in with new code after changing it (via "Forgot code" feature)', async () => {
         await restart();
 
@@ -48,6 +53,7 @@ describe('Auth test suite', () => {
         await assertGreeting();
     });
 
+    // Test-case #1.5
     it('user should be able to change pin code (via Settings)', async () => {
         const menuBtn = getElementByAccessibilityId('МенюЄ нові повідомлення');
         await menuBtn.click();
@@ -85,6 +91,7 @@ describe('Auth test suite', () => {
         await expect(settingsHeader).toBeDisplayed();
     });
 
+    // Test-case #1.6
     it('user should be able to login with new pin (after changing it via Settings)', async () => {
         await restart();
 
@@ -93,6 +100,7 @@ describe('Auth test suite', () => {
         await assertGreeting();
     });
 
+    // Test-case #1.7
     it('user should be able to sign out from the app', async () => {
         const menuBtn = getElementByAccessibilityId('МенюЄ нові повідомлення');
         await menuBtn.click();
@@ -113,12 +121,14 @@ describe('Auth test suite', () => {
         await expect(loginWithNBU).toBeDisplayed();
     });
 
+    // Test-case #1.8
     it('user should be able to authorize to the app after sign out', async () => {
         await authorize('3');
 
         await assertGreeting();
     });
 
+    // Test-case #1.9.
     it('user should be able to reauthorize after 3 not successful pin code inputs', async () => {
         await restart();
 

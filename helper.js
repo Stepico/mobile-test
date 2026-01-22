@@ -1,7 +1,5 @@
 const { driver } = require('@wdio/globals')
 
-// SELECTOR OPTIONS
-
 export function getElementByText(text) {
     return $(`android=new UiSelector().text("${text}")`);
 }
@@ -9,8 +7,6 @@ export function getElementByText(text) {
 export function getElementByAccessibilityId(accessibilityId) {
     return driver.$(`~${accessibilityId}`);
 }
-
-// FLOWS
 
 export async function authorize(codeDigit) {
     const loginWithNBU = getElementByText('BankID HБУ');
@@ -75,8 +71,6 @@ export async function enterPinCode(codeDigit) {
     }
 }
 
-// ASSERTIONS
-
 export async function assertGreeting() {
     const greeting = getElementByAccessibilityId('Привіт, Віктор 👋');
     await expect(greeting).toBeDisplayed();
@@ -93,8 +87,6 @@ export async function assertPopup(title, body) {
     expect(titleText).toEqual(title);
     expect(bodyText).toEqual(body);
 }
-
-// OTHER
 
 export async function scrollUntilVisible(selector, maxSwipes = 10) {
     for (let i = 0; i < maxSwipes; i++) {
@@ -141,35 +133,6 @@ export async function getContainer(resourceId) {
     return container;
 }
 
-// export async function findTextViewByText(container, expectedText, normalizeText = true) {
-//     const textViews = await container.$$('android.widget.TextView');
-
-//     const foundTexts = [];
-    
-//     const normalize = normalizeText 
-//         ? (t) => t.replace(/\s+/g, ' ').trim() 
-//         : (t) => t.trim();
-
-//     const expectedNormalized = normalize(expectedText);
-
-//     for (const textView of textViews) {
-//         const rawText = await textView.getText();
-//         const normalizedText = normalize(rawText);
-        
-//         if (normalizedText === expectedNormalized) {
-//             return textView;
-//         }
-
-//         foundTexts.push(normalizedText);
-//     }
-    
-//     throw new Error(
-//         `No TextView found with text "${expectedText}".\n` +
-//         `TextViews found (${foundTexts.length}):\n` +
-//         foundTexts.map(t => `  - "${t}"`).join('\n')
-//     );
-// }
-
 export async function findTextViewByText(resourceId, expectedText, normalizeText = true) {
     const container = await getContainer(resourceId);
     const textViews = await container.$$('android.widget.TextView');
@@ -200,12 +163,6 @@ export async function findTextViewByText(resourceId, expectedText, normalizeText
     );
 }
 
-// export async function assertTextView(resourceId, text, normalizeText = true) {
-//     const container = await getContainer(resourceId);
-
-//     const textView = await findTextViewByText(container, text, normalizeText);
-//     await expect(textView).toBeDisplayed();
-// }
 
 export async function assertTextView(resourceId, text, normalizeText = true) {
     const textView = await findTextViewByText(resourceId, text, normalizeText);
