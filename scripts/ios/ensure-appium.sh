@@ -11,7 +11,7 @@ echo "Node.js версія: $(node -v)"
 echo "npm версія: $(npm -v)"
 
 # Встановлюємо глобально Appium з детерміністичною версією
-APPIUM_VERSION="3.1.2"
+APPIUM_VERSION="2.11.5"
 echo "Встановлюємо Appium глобально версія $APPIUM_VERSION..."
 
 # Перевіряємо чи вже встановлено правильну версію
