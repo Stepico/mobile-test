@@ -71,13 +71,28 @@ except:
 " 2>/dev/null || xcodebuild -project "$BUILD_PATH" -list 2>/dev/null | grep -A 100 "Schemes:" | grep -v "Schemes:" | sed 's/^[[:space:]]*//' | head -20)
 fi
 
-# Визначаємо scheme (пріоритет: Diia в назві, потім перший доступний)
+# Визначаємо scheme (пріоритет: DiiaOpenSource, потім OpenSource, потім Diia, потім перший доступний)
 SCHEME=""
 if [ -n "$SCHEMES" ]; then
-    # Шукаємо scheme з "Diia" в назві
-    SCHEME=$(echo "$SCHEMES" | grep -i "diia" | head -1 || echo "")
+    # Пріоритет 1: DiiaOpenSource (очікувана назва основного app)
+    SCHEME=$(echo "$SCHEMES" | grep -iE "^DiiaOpenSource$|^DiiaOpenSource" | head -1 || echo "")
     
-    # Якщо не знайдено, беремо перший доступний
+    # Пріоритет 2: Будь-яка схема з "OpenSource" в назві
+    if [ -z "$SCHEME" ]; then
+        SCHEME=$(echo "$SCHEMES" | grep -i "opensource" | head -1 || echo "")
+    fi
+    
+    # Пріоритет 3: Схема з "Diia" в назві (але не Authorization, бо це framework)
+    if [ -z "$SCHEME" ]; then
+        SCHEME=$(echo "$SCHEMES" | grep -i "diia" | grep -v -i "authorization" | head -1 || echo "")
+    fi
+    
+    # Пріоритет 4: Будь-яка схема з "Diia" в назві
+    if [ -z "$SCHEME" ]; then
+        SCHEME=$(echo "$SCHEMES" | grep -i "diia" | head -1 || echo "")
+    fi
+    
+    # Пріоритет 5: Перший доступний
     if [ -z "$SCHEME" ]; then
         SCHEME=$(echo "$SCHEMES" | head -1)
     fi
@@ -91,6 +106,14 @@ if [ -z "$SCHEME" ]; then
 fi
 
 echo "✅ Використовуємо scheme: $SCHEME"
+echo "Доступні schemes:"
+for s in $SCHEMES; do
+    if [ "$s" = "$SCHEME" ]; then
+        echo "  → $s (вибрано)"
+    else
+        echo "    $s"
+    fi
+done
 
 # Повертаємося до root директорії проекту (скрипт міг бути викликаний з ios-diia)
 cd "$REPO_ROOT"
@@ -142,38 +165,138 @@ else
     }
 fi
 
+# Перевіряємо, чи build дійсно завершився успішно
+if [ -f "$ABS_BUILD_DIR/xcodebuild.log" ]; then
+    if ! grep -q "BUILD SUCCEEDED" "$ABS_BUILD_DIR/xcodebuild.log"; then
+        echo "❌ BUILD не завершився успішно (BUILD SUCCEEDED не знайдено в лозі)"
+        echo "Останні 50 рядків логу:"
+        tail -50 "$ABS_BUILD_DIR/xcodebuild.log"
+        exit 1
+    fi
+    echo "✅ BUILD SUCCEEDED підтверджено в лозі"
+    
+    # Перевіряємо, чи в лозі є інформація про створення .app файлу
+    if grep -E "(Touch|CodeSign).*\.app[[:space:]]" "$ABS_BUILD_DIR/xcodebuild.log" | grep -qv "\.bundle"; then
+        echo "✅ В лозі знайдено інформацію про створення .app файлу"
+    else
+        echo "⚠️  В лозі не знайдено інформації про створення .app файлу (можливо, створено лише .bundle)"
+    fi
+fi
+
 # Знаходимо зібраний app bundle
 # xcodebuild може розмістити .app в різних місцях залежно від структури проекту
 DERIVED_DATA_PATH="$ABS_BUILD_DIR/DerivedData"
-PRODUCTS_DEBUG="$DERIVED_DATA_PATH/Build/Products/Debug-iphonesimulator"
-PRODUCTS_RELEASE="$DERIVED_DATA_PATH/Build/Products/Release-iphonesimulator"
 
 echo "Шукаємо зібраний app bundle..."
 echo "DerivedData: $DERIVED_DATA_PATH"
 
-# Спочатку перевіряємо стандартні місця (без обмеження maxdepth)
+# Спочатку намагаємося отримати точний шлях через xcodebuild -showBuildSettings
+# Важливо: виконуємо з source директорії, де знаходиться проект
 BUILT_APP=""
-if [ -d "$PRODUCTS_DEBUG" ]; then
-    echo "Перевіряємо $PRODUCTS_DEBUG"
-    BUILT_APP=$(find "$PRODUCTS_DEBUG" -name "*.app" -type d | head -1)
+echo "Отримуємо build settings для визначення точного шляху до продукту..."
+cd "$ABS_SOURCE_DIR"
+if [ "$BUILD_TYPE" = "workspace" ]; then
+    BUILT_PRODUCTS_DIR=$(xcodebuild \
+        -workspace "$BUILD_PATH" \
+        -scheme "$SCHEME" \
+        -configuration Debug \
+        -sdk iphonesimulator \
+        -derivedDataPath "$ABS_BUILD_DIR/DerivedData" \
+        -showBuildSettings 2>/dev/null | grep -m 1 "BUILT_PRODUCTS_DIR" | sed 's/.*= *//' | xargs || echo "")
+else
+    BUILT_PRODUCTS_DIR=$(xcodebuild \
+        -project "$BUILD_PATH" \
+        -scheme "$SCHEME" \
+        -configuration Debug \
+        -sdk iphonesimulator \
+        -derivedDataPath "$ABS_BUILD_DIR/DerivedData" \
+        -showBuildSettings 2>/dev/null | grep -m 1 "BUILT_PRODUCTS_DIR" | sed 's/.*= *//' | xargs || echo "")
+fi
+cd "$REPO_ROOT"
+
+if [ -n "$BUILT_PRODUCTS_DIR" ] && [ -d "$BUILT_PRODUCTS_DIR" ]; then
+    echo "✅ Знайдено BUILT_PRODUCTS_DIR з build settings: $BUILT_PRODUCTS_DIR"
+    BUILT_APP=$(find "$BUILT_PRODUCTS_DIR" -maxdepth 1 -name "*.app" -type d | head -1)
     if [ -n "$BUILT_APP" ]; then
-        echo "✅ Знайдено в Debug: $BUILT_APP"
+        echo "✅ Знайдено app через BUILT_PRODUCTS_DIR: $BUILT_APP"
+    else
+        echo "⚠️  BUILT_PRODUCTS_DIR існує, але .app не знайдено безпосередньо в ньому"
+        echo "Вміст BUILT_PRODUCTS_DIR:"
+        ls -la "$BUILT_PRODUCTS_DIR" 2>/dev/null || echo "  Не вдалося перелічити"
     fi
 fi
 
-if [ -z "$BUILT_APP" ] && [ -d "$PRODUCTS_RELEASE" ]; then
-    echo "Перевіряємо $PRODUCTS_RELEASE"
-    BUILT_APP=$(find "$PRODUCTS_RELEASE" -name "*.app" -type d | head -1)
-    if [ -n "$BUILT_APP" ]; then
-        echo "✅ Знайдено в Release: $BUILT_APP"
-    fi
-fi
-
-# Якщо не знайдено, шукаємо по всьому DerivedData (рекурсивно, але з обмеженням глибини)
+# Якщо не знайдено через build settings, перевіряємо стандартні місця
+# xcodebuild з -derivedDataPath часто створює піддиректорію типу DerivedData/<ProjectName>-<Hash>/
 if [ -z "$BUILT_APP" ]; then
-    echo "Шукаємо по всьому DerivedData..."
+    echo "Перевіряємо стандартні місця розташування..."
+    
+    # Спочатку перевіряємо прямий шлях DerivedData/Build/Products
+    PRODUCTS_DEBUG="$DERIVED_DATA_PATH/Build/Products/Debug-iphonesimulator"
+    PRODUCTS_RELEASE="$DERIVED_DATA_PATH/Build/Products/Release-iphonesimulator"
+    
+    if [ -d "$PRODUCTS_DEBUG" ]; then
+        echo "Перевіряємо $PRODUCTS_DEBUG"
+        echo "Вміст директорії:"
+        ls -la "$PRODUCTS_DEBUG" 2>/dev/null | head -20 || echo "  Не вдалося перелічити"
+        
+        # Шукаємо .app безпосередньо в цій директорії
+        BUILT_APP=$(find "$PRODUCTS_DEBUG" -maxdepth 1 -name "*.app" -type d | head -1)
+        if [ -z "$BUILT_APP" ]; then
+            # Шукаємо в піддиректоріях (можливо, є вкладені структури)
+            BUILT_APP=$(find "$PRODUCTS_DEBUG" -name "*.app" -type d | head -1)
+        fi
+        if [ -n "$BUILT_APP" ]; then
+            echo "✅ Знайдено в Debug: $BUILT_APP"
+        fi
+    fi
+    
+    if [ -z "$BUILT_APP" ] && [ -d "$PRODUCTS_RELEASE" ]; then
+        echo "Перевіряємо $PRODUCTS_RELEASE"
+        BUILT_APP=$(find "$PRODUCTS_RELEASE" -maxdepth 1 -name "*.app" -type d | head -1)
+        if [ -z "$BUILT_APP" ]; then
+            BUILT_APP=$(find "$PRODUCTS_RELEASE" -name "*.app" -type d | head -1)
+        fi
+        if [ -n "$BUILT_APP" ]; then
+            echo "✅ Знайдено в Release: $BUILT_APP"
+        fi
+    fi
+    
+    # Якщо не знайдено, перевіряємо піддиректорії типу DerivedData/<ProjectName>-<Hash>/Build/Products
+    if [ -z "$BUILT_APP" ]; then
+        echo "Перевіряємо піддиректорії в DerivedData (xcodebuild може створити хешовані піддиректорії)..."
+        for SUBDIR in "$DERIVED_DATA_PATH"/*/; do
+            if [ -d "$SUBDIR" ] && [ -d "$SUBDIR/Build/Products" ]; then
+                SUBDIR_DEBUG="$SUBDIR/Build/Products/Debug-iphonesimulator"
+                SUBDIR_RELEASE="$SUBDIR/Build/Products/Release-iphonesimulator"
+                
+                if [ -d "$SUBDIR_DEBUG" ]; then
+                    echo "Перевіряємо $SUBDIR_DEBUG"
+                    BUILT_APP=$(find "$SUBDIR_DEBUG" -name "*.app" -type d | head -1)
+                    if [ -n "$BUILT_APP" ]; then
+                        echo "✅ Знайдено в піддиректорії Debug: $BUILT_APP"
+                        break
+                    fi
+                fi
+                
+                if [ -z "$BUILT_APP" ] && [ -d "$SUBDIR_RELEASE" ]; then
+                    echo "Перевіряємо $SUBDIR_RELEASE"
+                    BUILT_APP=$(find "$SUBDIR_RELEASE" -name "*.app" -type d | head -1)
+                    if [ -n "$BUILT_APP" ]; then
+                        echo "✅ Знайдено в піддиректорії Release: $BUILT_APP"
+                        break
+                    fi
+                fi
+            fi
+        done
+    fi
+fi
+
+# Якщо все ще не знайдено, шукаємо по всьому DerivedData рекурсивно
+if [ -z "$BUILT_APP" ]; then
+    echo "Шукаємо по всьому DerivedData (рекурсивно)..."
     # Знаходимо всі можливі .app файли
-    CANDIDATE_APPS=$(find "$DERIVED_DATA_PATH" -type d -name "*.app" 2>/dev/null)
+    CANDIDATE_APPS=$(find "$DERIVED_DATA_PATH" -type d -name "*.app" 2>/dev/null | head -20)
     
     if [ -n "$CANDIDATE_APPS" ]; then
         echo "Знайдені можливі app bundles:"
@@ -221,25 +344,124 @@ if [ -z "$BUILT_APP" ]; then
     fi
 fi
 
-# Якщо все ще не знайдено, виводимо детальну інформацію для діагностики
+# Якщо все ще не знайдено, намагаємося витягнути шлях з build логу
+if [ -z "$BUILT_APP" ] && [ -f "$ABS_BUILD_DIR/xcodebuild.log" ]; then
+    echo "Намагаємося витягнути шлях до .app з build логу..."
+    
+    # Шукаємо рядки з Touch або CodeSign для .app файлів (не .bundle)
+    LOG_APP_PATHS=$(grep -E "(Touch|CodeSign).*\.app[[:space:]]" "$ABS_BUILD_DIR/xcodebuild.log" | grep -v "\.bundle" | grep -oE "[^[:space:]]+\.app" | head -5 || echo "")
+    
+    if [ -n "$LOG_APP_PATHS" ]; then
+        echo "Знайдені шляхи до .app в лозі:"
+        for app_path in $LOG_APP_PATHS; do
+            echo "  - $app_path"
+            if [ -z "$BUILT_APP" ] && [ -d "$app_path" ]; then
+                BUILT_APP="$app_path"
+                echo "✅ Знайдено app з build логу: $BUILT_APP"
+                break
+            fi
+        done
+    fi
+    
+    # Якщо все ще не знайдено, шукаємо будь-які шляхи до .app в лозі
+    if [ -z "$BUILT_APP" ]; then
+        LOG_APP_PATH=$(grep -oE "[^[:space:]]+\.app" "$ABS_BUILD_DIR/xcodebuild.log" | grep -v "\.app\." | grep -v "\.bundle" | head -1 || echo "")
+        if [ -n "$LOG_APP_PATH" ] && [ -d "$LOG_APP_PATH" ]; then
+            BUILT_APP="$LOG_APP_PATH"
+            echo "✅ Знайдено app з build логу (альтернативний метод): $BUILT_APP"
+        fi
+    fi
+fi
+
+# Якщо все ще не знайдено, перевіряємо схему-специфічні піддиректорії в DerivedData
+if [ -z "$BUILT_APP" ]; then
+    echo "Перевіряємо схему-специфічні піддиректорії в DerivedData..."
+    # xcodebuild з -derivedDataPath може створити піддиректорію з хешем проекту
+    # Шукаємо всі піддиректорії в DerivedData і перевіряємо їх Build/Products
+    for SUBDIR in "$DERIVED_DATA_PATH"/*/; do
+        if [ -d "$SUBDIR" ]; then
+            SUBDIR_PRODUCTS="$SUBDIR/Build/Products"
+            if [ -d "$SUBDIR_PRODUCTS" ]; then
+                echo "Перевіряємо $SUBDIR_PRODUCTS"
+                FOUND_APP=$(find "$SUBDIR_PRODUCTS" -name "*.app" -type d | head -1)
+                if [ -n "$FOUND_APP" ]; then
+                    BUILT_APP="$FOUND_APP"
+                    echo "✅ Знайдено app в піддиректорії: $BUILT_APP"
+                    break
+                fi
+            fi
+        fi
+    done
+fi
+
+# Перевіряємо, чи знайдений файл дійсно є app bundle
+if [ -n "$BUILT_APP" ] && [ -d "$BUILT_APP" ]; then
+    if [ ! -f "$BUILT_APP/Info.plist" ]; then
+        echo "⚠️  Знайдена директорія $BUILT_APP не містить Info.plist, можливо це не app bundle"
+        echo "Шукаємо альтернативні варіанти..."
+        BUILT_APP=""
+    else
+        echo "✅ App зібрано: $BUILT_APP"
+        echo "✅ Перевірка Info.plist: знайдено"
+    fi
+fi
+
+# Якщо все ще не знайдено після всіх перевірок
 if [ -z "$BUILT_APP" ] || [ ! -d "$BUILT_APP" ]; then
     echo "❌ Зібраний app bundle не знайдено або шлях не є директорією"
     echo ""
-    echo "Структура DerivedData:"
+    echo "=== Детальна діагностика ==="
+    echo ""
+    echo "Використана схема: $SCHEME"
+    echo "Можливо, схема '$SCHEME' не створює основний app bundle, а лише framework/module."
+    echo "Спробуйте використати схему, яка створює основний app (наприклад, DiiaOpenSource)."
+    echo ""
+    echo "1. Структура DerivedData (перші 3 рівні):"
     if [ -d "$DERIVED_DATA_PATH" ]; then
-        find "$DERIVED_DATA_PATH" -maxdepth 3 -type d | head -30
+        find "$DERIVED_DATA_PATH" -maxdepth 3 -type d | head -50
     else
-        echo "  DerivedData директорія не існує!"
+        echo "  ❌ DerivedData директорія не існує!"
     fi
     echo ""
-    echo "Структура Build/Products (якщо існує):"
-    ls -la "$DERIVED_DATA_PATH/Build/Products" 2>/dev/null || echo "  Build/Products не знайдено"
+    echo "2. Структура Build/Products (якщо існує):"
+    if [ -d "$DERIVED_DATA_PATH/Build/Products" ]; then
+        ls -laR "$DERIVED_DATA_PATH/Build/Products" 2>/dev/null | head -100 || echo "  Не вдалося перелічити"
+    else
+        echo "  ❌ Build/Products не знайдено"
+        echo "  Перевіряємо всі піддиректорії в DerivedData:"
+        for SUBDIR in "$DERIVED_DATA_PATH"/*/; do
+            if [ -d "$SUBDIR" ]; then
+                echo "    - $SUBDIR"
+                if [ -d "$SUBDIR/Build" ]; then
+                    echo "      ✅ Містить Build/"
+                    ls -la "$SUBDIR/Build" 2>/dev/null | head -10 || true
+                fi
+            fi
+        done
+    fi
     echo ""
-    echo "Всі знайдені .app файли в DerivedData:"
-    find "$DERIVED_DATA_PATH" -name "*.app" -type d 2>/dev/null || echo "  .app файли не знайдено"
+    echo "3. Всі знайдені .app файли в DerivedData (рекурсивно):"
+    find "$DERIVED_DATA_PATH" -name "*.app" -type d 2>/dev/null | head -20 || echo "  ❌ .app файли не знайдено"
     echo ""
-    echo "Останні 50 рядків build логу:"
-    tail -50 "$ABS_BUILD_DIR/xcodebuild.log"
+    echo "4. Перевірка build логу на наявність шляхів до продуктів:"
+    if [ -f "$ABS_BUILD_DIR/xcodebuild.log" ]; then
+        echo "Шукаємо 'BUILT_PRODUCTS_DIR' або '.app' в лозі:"
+        grep -iE "BUILT_PRODUCTS_DIR|\.app[[:space:]]|Touch.*\.app" "$ABS_BUILD_DIR/xcodebuild.log" | tail -30 || echo "  Не знайдено"
+        echo ""
+        echo "Останні 100 рядків build логу:"
+        tail -100 "$ABS_BUILD_DIR/xcodebuild.log"
+    else
+        echo "  ❌ Build лог не знайдено"
+    fi
+    echo ""
+    echo "5. Перевірка чи build дійсно завершився успішно:"
+    if [ -f "$ABS_BUILD_DIR/xcodebuild.log" ]; then
+        if grep -q "BUILD SUCCEEDED" "$ABS_BUILD_DIR/xcodebuild.log"; then
+            echo "  ✅ BUILD SUCCEEDED знайдено в лозі"
+        else
+            echo "  ❌ BUILD SUCCEEDED НЕ знайдено в лозі"
+        fi
+    fi
     exit 1
 fi
 
