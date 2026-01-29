@@ -143,16 +143,47 @@ jobs:
           cd ios-diia
           
           echo "=== Патчимо API URL: api2oss → api2s ==="
+          echo ""
           
-          # Виправлення API URL в ВСІХ файлах (не тільки xcconfig)
-          # Шукаємо в .xcconfig, .swift, .plist, .json, .xml
-          find . \( -name "*.xcconfig" -o -name "*.swift" -o -name "*.plist" -o -name "*.json" -o -name "*.xml" \) \
+          # КРОК 1: Патчимо конфігураційні файли
+          echo "КРОК 1: Патчимо конфігураційні файли (.xcconfig, .plist, .json, .xml)..."
+          find . \( -name "*.xcconfig" -o -name "*.plist" -o -name "*.json" -o -name "*.xml" \) \
             -type f \
             -not -path "*/\.*" \
             -not -path "*/Pods/*" \
             -not -path "*/build/*" \
+            -not -path "*/DerivedData/*" \
             -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} +
+          echo "✅ Конфігураційні файли пропатчено"
           
+          # КРОК 2: Патчимо Swift код
+          echo ""
+          echo "КРОК 2: Патчимо Swift код (.swift файли)..."
+          find . -name "*.swift" \
+            -type f \
+            -not -path "*/\.*" \
+            -not -path "*/Pods/*" \
+            -not -path "*/build/*" \
+            -not -path "*/DerivedData/*" \
+            -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} + \
+            -exec sed -i '' 's/"api2oss"/"api2s"/g' {} + \
+            -exec sed -i '' "s/'api2oss'/'api2s'/g" {} +
+          echo "✅ Swift код пропатчено"
+          
+          # КРОК 3: Патчимо Objective-C код
+          echo ""
+          echo "КРОК 3: Патчимо Objective-C код (.m, .h файли)..."
+          find . \( -name "*.m" -o -name "*.h" \) \
+            -type f \
+            -not -path "*/\.*" \
+            -not -path "*/Pods/*" \
+            -not -path "*/build/*" \
+            -not -path "*/DerivedData/*" \
+            -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} + \
+            -exec sed -i '' 's/@"api2oss"/@"api2s"/g' {} +
+          echo "✅ Objective-C код пропатчено"
+          
+          echo ""
           echo "API URL замінено в всіх знайдених файлах"
           
           # Верифікація: перевіряємо чи залишились старі URL
@@ -187,6 +218,27 @@ jobs:
           else
             echo "⚠️  AppConfigurator.swift не знайдено"
           fi
+          
+          echo ""
+          echo "=== КРОК 4: Re-install Pods з пропатченими конфігами ==="
+          # Pods може містити хардкоджений api2oss, переінсталюємо після патчу
+          if [ -f "Podfile" ]; then
+            echo "Знайдено Podfile, переінсталюємо Pods..."
+            # Встановлюємо CocoaPods якщо потрібно
+            if ! command -v pod &> /dev/null; then
+              echo "Встановлюємо CocoaPods..."
+              sudo gem install cocoapods -v 1.15.2 --no-document
+            fi
+            
+            # Видаляємо старі Pods
+            rm -rf Pods Podfile.lock
+            
+            # Встановлюємо Pods з нуля
+            pod install --repo-update || pod install
+            echo "✅ Pods переінстальовано з пропатченими конфігами"
+          else
+            echo "ℹ️  Podfile не знайдено, пропускаємо"
+          fi
 
       - name: Очищення build кешу для чистої збірки
         run: |
@@ -194,21 +246,37 @@ jobs:
           cd ios-diia
           
           # Очищаємо DerivedData (там може бути закешений старий конфіг)
-          if [ -d "~/Library/Developer/Xcode/DerivedData" ]; then
-            rm -rf ~/Library/Developer/Xcode/DerivedData
+          # ВАЖЛИВО: Тільда (~) НЕ розширюється в лапках, використовуємо $HOME
+          DERIVED_DATA="$HOME/Library/Developer/Xcode/DerivedData"
+          if [ -d "$DERIVED_DATA" ]; then
+            echo "Видаляємо $DERIVED_DATA"
+            rm -rf "$DERIVED_DATA"
             echo "✅ DerivedData очищено"
+          else
+            echo "ℹ️  DerivedData не існує, пропускаємо"
           fi
           
           # Очищаємо build директорію проекту
           if [ -d "build" ]; then
             rm -rf build
             echo "✅ Build директорія очищена"
+          else
+            echo "ℹ️  Build директорія не існує, пропускаємо"
+          fi
+          
+          # Очищаємо Pods кеш (там теж може бути старий конфіг)
+          if [ -d "Pods" ]; then
+            echo "Очищаємо Pods кеш..."
+            rm -rf Pods
+            echo "✅ Pods очищено"
           fi
           
           # Xcode clean
+          echo "Виконуємо xcodebuild clean..."
           xcodebuild clean -workspace DiiaOpenSource.xcworkspace -scheme DiiaOpenSource -configuration Debug 2>/dev/null || echo "Clean виконано (деякі помилки ігноруємо)"
           
-          echo "✅ Build кеш очищено - app зберется з нуля з правильним API URL"
+          echo ""
+          echo "✅ Build кеш повністю очищено - app зберется з нуля з правильним API URL"
 
       - name: Збірка iOS додатку для Simulator
         id: build-app
@@ -290,11 +358,16 @@ jobs:
           echo ""
           echo "🔍 Шукаємо API URL в app binary..."
           APP_BINARY="$APP_PATH/DiiaOpenSource"
+          
+          HAS_OLD_URL=false
+          HAS_NEW_URL=false
+          
           if [ -f "$APP_BINARY" ]; then
             echo "Старий URL (api2oss):"
             if strings "$APP_BINARY" | grep -i "api2oss\.diia\.gov\.ua" | head -3; then
               echo "❌ КРИТИЧНА ПОМИЛКА: СТАРИЙ URL знайдено в binary!"
               echo "Це означає що app зібрався з неправильним конфігом"
+              HAS_OLD_URL=true
             else
               echo "✅ Старий URL НЕ знайдено в binary"
             fi
@@ -303,10 +376,39 @@ jobs:
             echo "Новий URL (api2s):"
             if strings "$APP_BINARY" | grep -i "api2s\.diia\.gov\.ua" | head -3; then
               echo "✅ Новий URL знайдено в binary - патч спрацював!"
+              HAS_NEW_URL=true
             else
               echo "❌ КРИТИЧНА ПОМИЛКА: НОВИЙ URL НЕ знайдено в binary!"
               echo "Це означає що патч НЕ СПРАЦЮВАВ або app зібрався з кешу"
             fi
+            
+            echo ""
+            echo "=== ФІНАЛЬНА ПЕРЕВІРКА ==="
+            if [ "$HAS_OLD_URL" = true ]; then
+              echo "❌ FAIL: Старий URL (api2oss) все ще в binary"
+              echo ""
+              echo "Патч НЕ ПОВНІСТЮ спрацював. Можливі причини:"
+              echo "1. Pods містять хардкоджений api2oss"
+              echo "2. Якийсь згенерований файл має старий URL"
+              echo "3. Build кеш не повністю очищено"
+              echo ""
+              echo "Зупиняємо workflow - app не можна тестувати з неправильним API"
+              exit 1
+            fi
+            
+            if [ "$HAS_NEW_URL" = false ]; then
+              echo "❌ FAIL: Новий URL (api2s) НЕ знайдено в binary"
+              echo ""
+              echo "Патч НЕ спрацював взагалі. Можливі причини:"
+              echo "1. Патч застосувався після збірки"
+              echo "2. Build скрипт ігнорує пропатчені файли"
+              echo "3. API URL генерується динамічно"
+              echo ""
+              echo "Зупиняємо workflow - app не можна тестувати з неправильним API"
+              exit 1
+            fi
+            
+            echo "✅ SUCCESS: Тільки новий URL (api2s) в binary, старий відсутній"
           fi
           
           echo ""
