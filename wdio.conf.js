@@ -36,6 +36,11 @@ exports.config = {
     // Patterns to exclude.
     exclude: [
         // 'path/to/excluded/files'
+        // Skip authentication tests if SKIP_AUTH_TESTS env variable is set
+        // This is useful when BankID API is unavailable in test environment
+        ...(process.env.SKIP_AUTH_TESTS === 'true' 
+            ? ['./test/specs/Android/auth.e2e.js'] 
+            : [])
     ],
     //
     // ============

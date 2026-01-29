@@ -42,7 +42,13 @@ exports.config = {
     specs: [
         './test/specs/iOS/**/*.js'
     ],
-    exclude: [],
+    exclude: [
+        // Skip authentication tests if SKIP_AUTH_TESTS env variable is set
+        // This is useful when BankID API is unavailable in test environment
+        ...(process.env.SKIP_AUTH_TESTS === 'true' 
+            ? ['./test/specs/iOS/authentication.e2e.js'] 
+            : [])
+    ],
     //
     // Limit parallel test execution
     // In CI: Run 1 at a time to avoid overloading (large app)
