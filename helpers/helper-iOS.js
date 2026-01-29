@@ -151,6 +151,8 @@ const SCREEN_STATE = {
     PIN_CONFIRM: 'pin_confirm',
     MAIN: 'main',
     LOADING: 'loading',
+    WEBVIEW_ERROR: 'webview_error',  // BankID API error (404, etc.)
+    WEBVIEW: 'webview',  // Generic WebView screen
     UNKNOWN: 'unknown'
 };
 
@@ -306,6 +308,18 @@ async function detectScreen() {
         if (pageSource.includes('Не пам\'ятаю код') || pageSource.includes('Не пам\'ятаю')) {
             logStep('detectScreen', 'PIN_LOGIN screen detected (Не пам\'ятаю код button)');
             return SCREEN_STATE.PIN_LOGIN;
+        }
+        
+        // Check for WebView error screen (BankID API errors)
+        if (pageSource.includes('NotFoundError') || pageSource.includes('Not found')) {
+            logStep('detectScreen', 'WEBVIEW_ERROR screen detected (BankID API error)');
+            return SCREEN_STATE.WEBVIEW_ERROR;
+        }
+        
+        // Check for WebView with back button (generic WebView screen)
+        if (pageSource.includes('XCUIElementTypeWebView') && pageSource.includes('name="Назад"')) {
+            logStep('detectScreen', 'WEBVIEW screen detected (with back button)');
+            return SCREEN_STATE.WEBVIEW;
         }
         
         // Check for loading screen LAST - only if we haven't identified any other screen
@@ -594,6 +608,23 @@ async function ensureAuthorized(timeout = 20000) {
         if (currentState === SCREEN_STATE.PIN_CREATE || currentState === SCREEN_STATE.PIN_CONFIRM) {
             await restart();
             // Wait for loading after restart
+            await waitForLoadingToComplete(timeout);
+        }
+        
+        // If on WebView error screen (BankID API error), click back and restart
+        if (currentState === SCREEN_STATE.WEBVIEW_ERROR || currentState === SCREEN_STATE.WEBVIEW) {
+            logStep('ensureAuthorized', 'WebView error detected, clicking back and restarting');
+            try {
+                const backBtn = getElementByText('Назад');
+                if (await backBtn.isDisplayed().catch(() => false)) {
+                    await backBtn.click();
+                    await driver.pause(1000);
+                }
+            } catch (e) {
+                logStep('ensureAuthorized', `Could not click back button: ${e.message}`);
+            }
+            // Restart to clean state
+            await restart();
             await waitForLoadingToComplete(timeout);
         }
 
@@ -1011,6 +1042,30 @@ async function authorize(codeDigit) {
         const signinBtn = getElementByAccessibilityId('SignIn');
         await expect(signinBtn).toBeDisplayed();
         await signinBtn.click();
+        
+        // Wait for response from BankID API (check for errors first)
+        await driver.pause(2000);
+        
+        // Check if BankID API returned an error
+        const pageSourceAfterSignIn = await driver.getPageSource();
+        if (pageSourceAfterSignIn.includes('NotFoundError') || pageSourceAfterSignIn.includes('Not found')) {
+            logStep('authorize', 'BankID API returned error 404 - clicking back and restarting');
+            
+            // Click back button to return
+            try {
+                const backBtn = getElementByText('Назад');
+                if (await backBtn.isDisplayed().catch(() => false)) {
+                    await backBtn.click();
+                    await driver.pause(1000);
+                }
+            } catch (e) {
+                logStep('authorize', `Could not click back: ${e.message}`);
+            }
+            
+            // Restart app to clean state
+            await restart();
+            throw new Error('BankID API returned 404 error. This might be due to invalid token, bank, or API unavailability. Please check test environment.');
+        }
         
         // Очікуємо завершення обробки авторизації - перевіряємо появу кнопки "Далі" або PIN create екрану
         logStep('authorize', 'Waiting for "Далі" button or PIN create screen after SignIn');
