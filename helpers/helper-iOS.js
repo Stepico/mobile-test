@@ -924,12 +924,13 @@ async function authorize(codeDigit) {
         try {
             // Спочатку спробуємо знайти по accessibilityIdentifier (якщо буде додано)
             tokenInput = getElementByAccessibilityId('tokenInputField');
-            await tokenInput.waitForDisplayed({ timeout: 200 });
+            await tokenInput.waitForDisplayed({ timeout: 1000 });
             console.log(`[DEBUG] authorize() | Знайдено поле по accessibilityIdentifier: tokenInputField`);
         } catch (e) {
             // Fallback: використовуємо Predicate String
+            // WebView потребує більше часу для завантаження
             tokenInput = getElementByPredicate('type == "XCUIElementTypeTextField" AND enabled == true AND visible == true');
-            await tokenInput.waitForDisplayed({ timeout: 1000 });
+            await tokenInput.waitForDisplayed({ timeout: 15000 }); // 15 seconds for WebView to load
             console.log(`[DEBUG] authorize() | Знайдено поле по Predicate String (fallback)`);
         }
         await expect(tokenInput).toBeDisplayed();
