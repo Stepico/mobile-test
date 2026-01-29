@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-DEVICE_NAME="${IOS_DEVICE_NAME:-iPhone 15 Pro}"
-PLATFORM_VERSION="${IOS_PLATFORM_VERSION:-17.4}"
+DEVICE_NAME="${IOS_DEVICE_NAME:-iPhone 16 Pro}"
+PLATFORM_VERSION="${IOS_PLATFORM_VERSION:-18.5}"
 OPEN_SIMULATOR="${OPEN_SIMULATOR:-false}"
 
 echo "=== Boot iOS Simulator ==="

@@ -6,8 +6,8 @@ const fs = require('fs');
 const iosAppPath = process.env.IOS_APP_PATH ||
     path.join(__dirname, 'ios-app', 'DiiaOpenSource.app');
 const iosBundleId = process.env.IOS_BUNDLE_ID || 'ua.gov.diia.opensource.app';
-const iosDeviceName = process.env.IOS_DEVICE_NAME || 'iPhone 15 Pro';
-const iosPlatformVersion = process.env.IOS_PLATFORM_VERSION || '17.4';
+const iosDeviceName = process.env.IOS_DEVICE_NAME || 'iPhone 16 Pro';
+const iosPlatformVersion = process.env.IOS_PLATFORM_VERSION || '18.5';
 
 // Перевірка існування app bundle з детальним повідомленням
 if (!fs.existsSync(iosAppPath)) {
