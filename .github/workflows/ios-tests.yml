@@ -232,6 +232,26 @@ jobs:
           echo "Simulator запущено:"
           echo "$BOOTED_DEVICE"
 
+      - name: Попереднє встановлення app на Simulator
+        run: |
+          echo "Встановлюємо app на Simulator заздалегідь для швидшого запуску тестів..."
+          UDID="${{ steps.boot-sim.outputs.udid }}"
+          APP_PATH="./ios-app/DiiaOpenSource.app"
+          
+          # Встановлюємо app
+          xcrun simctl install "$UDID" "$APP_PATH"
+          echo "App встановлено на Simulator"
+          
+          # Даємо час симулятору обробити встановлення
+          sleep 5
+          
+          # Перевіряємо що app встановлено
+          if xcrun simctl listapps "$UDID" | grep -q "ua.gov.diia.opensource.app"; then
+            echo "✅ App успішно встановлено та підтверджено"
+          else
+            echo "⚠️  App може бути не встановлено правильно"
+          fi
+
       # ========================================
       # КРОК 5: Запуск тестів
       # ========================================
@@ -241,11 +261,21 @@ jobs:
         run: |
           echo "Запускаємо iOS тести..."
           echo ""
+          echo "=== Конфігурація ==="
+          echo "App path: ${IOS_APP_PATH}"
+          echo "Device UDID: ${IOS_DEVICE_UDID}"
+          echo "Device name: ${IOS_DEVICE_NAME}"
+          echo "Platform version: ${IOS_PLATFORM_VERSION}"
+          echo ""
+          echo "=== Перевірка app перед запуском ==="
+          ls -lh "${IOS_APP_PATH}"
+          echo ""
+          echo "=== Запуск тестів ==="
           npm run test:ios:ci
         env:
           IOS_APP_PATH: ./ios-app/DiiaOpenSource.app
           IOS_DEVICE_UDID: ${{ steps.boot-sim.outputs.udid }}
-        timeout-minutes: 45  # Таймаут для тестів окремо
+        timeout-minutes: 60  # Збільшено timeout для великого app
 
       # ========================================
       # КРОК 6: Збір артефактів при помилках

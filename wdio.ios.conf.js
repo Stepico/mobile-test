@@ -44,6 +44,9 @@ exports.config = {
     ],
     exclude: [],
     //
+    // Limit parallel test execution
+    // In CI: Run 1 at a time to avoid overloading (large app)
+    // Locally: Can run 1 at a time for stability
     maxInstances: 1,
     //
     // iOS capabilities
@@ -55,11 +58,28 @@ exports.config = {
         'appium:automationName': 'XCUITest',
         'appium:app': path.resolve(iosAppPath),
         'appium:bundleId': iosBundleId,
-        'appium:noReset': false,
-        'appium:fullReset': false,  // Full reset to clean state before tests
-        'appium:wdaLaunchTimeout': 120000, // 2 minutes for WebDriverAgent launch (increased for CI)
+        // In CI: Use noReset to skip reinstall if app already installed (faster)
+        // Locally: Keep noReset false for fresh install each time
+        'appium:noReset': process.env.CI ? true : false,
+        'appium:fullReset': false,
+        
+        // WebDriverAgent timeouts (increased for large app in CI)
+        'appium:wdaLaunchTimeout': process.env.CI ? 300000 : 120000, // 5 min CI, 2 min local
+        'appium:wdaConnectionTimeout': 180000, // 3 minutes to establish connection
+        'appium:wdaStartupRetries': 4,
+        'appium:wdaStartupRetryInterval': 20000,
+        
+        // Command timeouts
         'appium:newCommandTimeout': 1800, // 30 minutes timeout for long-running tests
-        'appium:showXcodeLog': true,
+        
+        // Installation and launch optimizations
+        'appium:iosInstallPause': 8000, // 8 second pause after app install
+        'appium:autoAcceptAlerts': true,
+        'appium:shouldTerminateApp': false, // Keep app running between tests
+        
+        // Logging
+        'appium:showXcodeLog': !process.env.CI, // Disable verbose logs in CI
+        'appium:skipLogCapture': process.env.CI, // Skip log capture in CI for performance
         'appium:useSimpleBuildTest': true
     }],
 
@@ -70,8 +90,9 @@ exports.config = {
     logLevel: 'info',
     bail: 0,
     waitforTimeout: 10000,
-    connectionRetryTimeout: process.env.CI ? 300000 : 120000, // 5 minutes for CI (large app install), 2 minutes local
-    connectionRetryCount: 2,
+    // Increased timeouts for large app (111MB) installation and launch
+    connectionRetryTimeout: process.env.CI ? 600000 : 120000, // 10 minutes CI, 2 minutes local
+    connectionRetryCount: 3, // Try 3 times before giving up
     services: ['appium'],
     framework: 'mocha',
     reporters: ['spec'],
