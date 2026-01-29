@@ -1,7 +1,21 @@
 name: iOS App Tests
 
 on:
+  # Ручний запуск workflow через GitHub UI
   workflow_dispatch:
+    inputs:
+      ios_version:
+        description: 'iOS версія для тестування (за замовчуванням 17.4)'
+        required: false
+        default: '17.4'
+        type: string
+      device_name:
+        description: 'Назва пристрою (за замовчуванням iPhone 15 Pro)'
+        required: false
+        default: 'iPhone 15 Pro'
+        type: string
+  
+  # Автоматичний запуск при push до main (тільки якщо змінились iOS тести або конфігурація)
   push:
     branches:
       - main
@@ -11,6 +25,8 @@ on:
       - 'wdio.ios.conf.js'
       - 'scripts/ios/**'
       - 'helpers/helper-iOS.js'
+  
+  # Автоматичний запуск при PR
   pull_request:
     branches:
       - main
@@ -23,126 +39,273 @@ on:
 
 jobs:
   ios-tests:
+    name: iOS Tests (${{ inputs.device_name || 'iPhone 15 Pro' }} - iOS ${{ inputs.ios_version || '17.4' }})
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 60  # Збільшено до 60 хв для складних тестів з BankID
 
     env:
+      # Конфігурація iOS app
       IOS_BUNDLE_ID: ua.gov.diia.opensource.app
-      IOS_DEVICE_NAME: iPhone 15 Pro
-      IOS_PLATFORM_VERSION: '17.4'
+      IOS_DEVICE_NAME: ${{ inputs.device_name || 'iPhone 15 Pro' }}
+      IOS_PLATFORM_VERSION: ${{ inputs.ios_version || '17.4' }}
+      
+      # CI environment
       CI: true
+      NODE_ENV: test
+      
+      # Appium конфігурація
+      APPIUM_LOG_LEVEL: info
 
     steps:
-      - name: Checkout tests repo
+      # ========================================
+      # КРОК 1: Підготовка середовища
+      # ========================================
+      
+      - name: 📥 Checkout тестового репозиторію
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 1  # Shallow clone для швидкості
 
-      - name: Set up Node.js
+      - name: 🔧 Налаштування Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          cache: 'npm'  # Кешування npm пакетів
 
-      - name: Select Xcode
-        run: sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+      - name: 🍎 Вибір версії Xcode
+        run: |
+          sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+          echo "✅ Xcode шлях встановлено"
 
-      - name: Show Xcode version
-        run: xcodebuild -version
+      - name: 📋 Інформація про Xcode та доступні симулятори
+        run: |
+          echo "=== Xcode версія ==="
+          xcodebuild -version
+          echo ""
+          echo "=== Доступні iOS симулятори ==="
+          xcrun simctl list devices available | grep -i "iphone" | head -15
+          echo ""
+          echo "=== Доступні iOS runtimes ==="
+          xcrun simctl list runtimes available | grep -i "ios"
 
-      - name: List available simulators
-        run: xcrun simctl list devices available | grep -i "iphone" | head -10
+      # ========================================
+      # КРОК 2: Встановлення залежностей
+      # ========================================
 
-      - name: Install dependencies
-        run: npm ci
+      - name: 📦 Встановлення npm залежностей
+        run: |
+          echo "Встановлюємо npm пакети..."
+          npm ci
+          echo "✅ npm залежності встановлено"
 
-      - name: Ensure Appium + XCUITest driver
-        run: bash scripts/ios/ensure-appium.sh
+      - name: 🤖 Кеш Appium
+        id: cache-appium
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.appium
+            ~/.npm/_npx
+          key: ${{ runner.os }}-appium-${{ hashFiles('scripts/ios/ensure-appium.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-appium-
 
-      - name: Checkout iOS source repo
+      - name: 🚀 Встановлення Appium + XCUITest driver
+        run: |
+          echo "Встановлюємо Appium та XCUITest driver..."
+          bash scripts/ios/ensure-appium.sh
+          echo ""
+          echo "✅ Appium готовий до роботи"
+
+      # ========================================
+      # КРОК 3: Збірка iOS додатку
+      # ========================================
+
+      - name: 📥 Checkout iOS source репозиторію
         uses: actions/checkout@v4
         with:
           repository: diia-open-source/ios-diia
           path: ios-diia
           fetch-depth: 1
 
-      - name: Build iOS app
-        run: bash scripts/ios/build-app.sh
+      - name: 🔨 Збірка iOS додатку для Simulator
+        id: build-app
+        run: |
+          echo "Починаємо збірку iOS додатку..."
+          bash scripts/ios/build-app.sh
+          echo "✅ Збірка завершена"
         env:
           IOS_SOURCE_DIR: ./ios-diia
+        continue-on-error: false  # Якщо збірка падає - зупиняємо workflow
 
-      - name: Verify app bundle exists
+      - name: ✅ Перевірка app bundle
+        id: verify-app
         run: |
-          if [ ! -d "./ios-app/DiiaOpenSource.app" ]; then
-            echo "❌ App bundle не знайдено в ./ios-app/DiiaOpenSource.app"
+          APP_PATH="./ios-app/DiiaOpenSource.app"
+          
+          if [ ! -d "$APP_PATH" ]; then
+            echo "❌ App bundle не знайдено в $APP_PATH"
             echo ""
-            echo "Перевірка структури:"
-            ls -la ./ios-app/ 2>/dev/null || echo "Директорія ios-app не існує"
+            echo "=== Діагностика ==="
+            echo "Структура ios-app директорії:"
+            ls -la ./ios-app/ 2>/dev/null || echo "❌ Директорія ios-app не існує"
             echo ""
-            echo "Перевірка build логів:"
+            echo "Останні 100 рядків build логу:"
             if [ -f "./ios-build/xcodebuild.log" ]; then
               tail -100 ./ios-build/xcodebuild.log
+            else
+              echo "❌ Build лог не знайдено"
             fi
             exit 1
-          else
-            echo "✅ App bundle знайдено"
-            ls -lh ./ios-app/DiiaOpenSource.app
           fi
+          
+          echo "✅ App bundle знайдено: $APP_PATH"
+          echo ""
+          echo "=== Інформація про app bundle ==="
+          ls -lh "$APP_PATH"
+          echo ""
+          
+          # Отримуємо Bundle ID
+          BUNDLE_ID=$(defaults read "$APP_PATH/Info.plist" CFBundleIdentifier 2>/dev/null || echo "невідомо")
+          echo "Bundle ID: $BUNDLE_ID"
+          
+          # Отримуємо розмір
+          APP_SIZE=$(du -sh "$APP_PATH" | cut -f1)
+          echo "Розмір: $APP_SIZE"
+          
+          # Зберігаємо для job summary
+          echo "app_size=$APP_SIZE" >> $GITHUB_OUTPUT
+          echo "bundle_id=$BUNDLE_ID" >> $GITHUB_OUTPUT
 
-      - name: Boot iOS simulator
+      # ========================================
+      # КРОК 4: Запуск iOS Simulator
+      # ========================================
+
+      - name: 📱 Запуск iOS Simulator
         id: boot-sim
-        run: bash scripts/ios/boot-sim.sh
-        env:
-          OPEN_SIMULATOR: false
-
-      - name: Verify simulator is booted
         run: |
+          echo "Запускаємо iOS Simulator..."
+          bash scripts/ios/boot-sim.sh
+          echo "✅ Simulator запущено"
+        env:
+          OPEN_SIMULATOR: false  # Не відкриваємо GUI в CI
+
+      - name: ✅ Перевірка стану Simulator
+        run: |
+          echo "Перевіряємо чи Simulator запущено..."
           BOOTED_DEVICE=$(xcrun simctl list devices | grep "Booted" || echo "")
+          
           if [ -z "$BOOTED_DEVICE" ]; then
-            echo "❌ Simulator не запущено"
+            echo "❌ Simulator не запущено або не в статусі Booted"
+            echo ""
+            echo "=== Доступні пристрої ==="
+            xcrun simctl list devices
             exit 1
           fi
+          
           echo "✅ Simulator запущено:"
           echo "$BOOTED_DEVICE"
 
-      - name: Run iOS tests
-        run: npm run test:ios:ci
+      # ========================================
+      # КРОК 5: Запуск тестів
+      # ========================================
+
+      - name: 🧪 Запуск iOS E2E тестів
+        id: run-tests
+        run: |
+          echo "Запускаємо iOS тести..."
+          echo ""
+          npm run test:ios:ci
         env:
           IOS_APP_PATH: ./ios-app/DiiaOpenSource.app
           IOS_DEVICE_UDID: ${{ steps.boot-sim.outputs.udid }}
+        timeout-minutes: 45  # Таймаут для тестів окремо
 
-      - name: Upload screenshots on failure
+      # ========================================
+      # КРОК 6: Збір артефактів при помилках
+      # ========================================
+
+      - name: 📸 Завантаження скріншотів (при помилці)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: ios-screenshots
+          name: ios-screenshots-${{ github.run_number }}
           path: artifacts/screenshots/**
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: Upload page sources on failure
+      - name: 📄 Завантаження page source (при помилці)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: ios-pagesources
+          name: ios-pagesources-${{ github.run_number }}
           path: artifacts/pagesources/**
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: Upload build logs on failure
+      - name: 📋 Завантаження build логів (при помилці)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: ios-build-logs
+          name: ios-build-logs-${{ github.run_number }}
           path: ios-build/xcodebuild.log
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: Upload Appium logs on failure
+      - name: 🤖 Завантаження Appium логів (при помилці)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: ios-appium-logs
-          path: appium.log
+          name: ios-appium-logs-${{ github.run_number }}
+          path: |
+            appium.log
+            appium*.log
           retention-days: 7
           if-no-files-found: ignore
+
+      - name: 📊 Завантаження WebDriver логів (при помилці)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-wdio-logs-${{ github.run_number }}
+          path: |
+            wdio-*.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # ========================================
+      # КРОК 7: Job Summary
+      # ========================================
+
+      - name: 📝 Створення job summary
+        if: always()
+        run: |
+          echo "## 📱 iOS Tests Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Конфігурація
+          echo "### 🔧 Конфігурація" >> $GITHUB_STEP_SUMMARY
+          echo "- **Пристрій**: ${{ env.IOS_DEVICE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **iOS версія**: ${{ env.IOS_PLATFORM_VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Bundle ID**: ${{ steps.verify-app.outputs.bundle_id || 'N/A' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **App розмір**: ${{ steps.verify-app.outputs.app_size || 'N/A' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Статус тестів
+          echo "### 🧪 Результати тестів" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.run-tests.outcome }}" == "success" ]; then
+            echo "✅ **Всі тести пройшли успішно**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Тести завершились з помилками**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Перегляньте артефакти для детальної інформації:" >> $GITHUB_STEP_SUMMARY
+            echo "- 📸 Скріншоти помилок" >> $GITHUB_STEP_SUMMARY
+            echo "- 📄 Page source файли" >> $GITHUB_STEP_SUMMARY
+            echo "- 📋 Build та Appium логи" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Xcode інформація
+          echo "### 🍎 Xcode Environment" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          xcodebuild -version >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
