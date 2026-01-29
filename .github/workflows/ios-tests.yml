@@ -15,9 +15,9 @@ on:
         default: 'iPhone 16 Pro'
         type: string
       ios_app_tag:
-        description: 'iOS app тег з github (за замовчуванням 4.25.0)'
+        description: 'iOS app тег з github (за замовчуванням 4.20.6)'
         required: false
-        default: '4.25.0'
+        default: '4.20.6'
         type: string
   
   # Автоматичний запуск при push до main (тільки якщо змінились iOS тести або конфігурація)
@@ -53,7 +53,7 @@ jobs:
       IOS_BUNDLE_ID: ua.gov.diia.opensource.app
       IOS_DEVICE_NAME: ${{ inputs.device_name || 'iPhone 16 Pro' }}
       IOS_PLATFORM_VERSION: ${{ inputs.ios_version || '18.5' }}
-      IOS_APP_TAG: ${{ inputs.ios_app_tag || '4.25.0' }}
+      IOS_APP_TAG: ${{ inputs.ios_app_tag || '4.20.6' }}
       
       # CI environment
       CI: true
@@ -130,15 +130,25 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: diia-open-source/ios-diia
-          ref: ${{ env.IOS_APP_TAG }}  # Використовуємо стабільний тег (за замовчуванням 4.25.0)
+          ref: ${{ env.IOS_APP_TAG }}  # Використовуємо стабільний тег (за замовчуванням 4.20.6)
           path: ios-diia
           fetch-depth: 1
 
-      - name: Виправлення API URL в конфігурації
+      - name: Виправлення конфігурації та коду
         run: |
           cd ios-diia
+          
+          # Виправлення API URL
           find . -name "*.xcconfig" -type f -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} +
-          echo "API URL оновлено на api2s.diia.gov.ua"
+          echo "API URL оновлено"
+          
+          # Виправлення AppConfigurator.swift (якщо є помилка imageNameProvider)
+          if [ -f "DiiaOpenSource/AppConfigurator.swift" ]; then
+            # Видаляємо параметр imageNameProvider якщо він є
+            sed -i '' 's/, imageNameProvider: [^)]*//g' DiiaOpenSource/AppConfigurator.swift
+            sed -i '' 's/imageNameProvider: [^,)]*,\?//g' DiiaOpenSource/AppConfigurator.swift
+            echo "AppConfigurator.swift пропатчено"
+          fi
 
       - name: Збірка iOS додатку для Simulator
         id: build-app
