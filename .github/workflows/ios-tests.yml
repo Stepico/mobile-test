@@ -134,6 +134,12 @@ jobs:
           path: ios-diia
           fetch-depth: 1
 
+      - name: Виправлення API URL в конфігурації
+        run: |
+          cd ios-diia
+          find . -name "*.xcconfig" -type f -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} +
+          echo "API URL оновлено на api2s.diia.gov.ua"
+
       - name: Збірка iOS додатку для Simulator
         id: build-app
         run: |
