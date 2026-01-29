@@ -893,13 +893,13 @@ async function authorize(codeDigit) {
         
         // Очікуємо завантаження WebView - перевіряємо появу кнопки "Банк НаДія"
         logStep('authorize', 'Waiting for WebView to load - looking for "Банк НаДія" button');
-        const bankNadiia = getElementByText('Банк НаДія');
         await driver.waitUntil(
             async () => {
                 try {
                     // Check if session is still active
-                    await driver.getPageSource();
-                    return await bankNadiia.isDisplayed().catch(() => false);
+                    const pageSource = await driver.getPageSource();
+                    // Check if bank selection screen appeared (look for "Банк НаДія" or "Оберіть свій банк")
+                    return pageSource.includes('Банк НаДія') || pageSource.includes('Оберіть свій банк');
                 } catch (e) {
                     if (e.message && e.message.includes('session')) {
                         throw new Error('Session terminated while waiting for WebView');
@@ -907,9 +907,12 @@ async function authorize(codeDigit) {
                     return false;
                 }
             },
-            { timeout: 15000, timeoutMsg: 'WebView did not load - "Банк НаДія" button not found' }
+            { timeout: 15000, timeoutMsg: 'WebView did not load - bank selection screen not found' }
         );
-        await expect(bankNadiia).toBeDisplayed();
+        
+        // Now find and click the bank button (element will be fresh)
+        const bankNadiia = getElementByText('Банк НаДія');
+        await bankNadiia.waitForDisplayed({ timeout: 5000 });
         await bankNadiia.click();
         await driver.pause(500); // Wait for WebView to process click
 
@@ -1177,6 +1180,45 @@ async function forgotCode() {
         await confirmAuthorize.waitForDisplayed({ timeout: 5000 });
         await confirmAuthorize.click();
         logStep('forgotCode', 'Clicked "Authorize" button - PIN reset, back to AUTH screen');
+        
+        // Wait for loading to complete after clicking authorize
+        await waitForLoadingToComplete(30000);
+        
+        // Wait for AUTH screen to appear
+        await driver.waitUntil(
+            async () => {
+                try {
+                    const state = await detectScreen();
+                    if (state === SCREEN_STATE.AUTH) {
+                        return true;
+                    }
+                    // Also check for auth screen elements directly
+                    try {
+                        const checkbox = getElementByAccessibilityId('checkbox_conditions_bordered_auth');
+                        if (await checkbox.isDisplayed().catch(() => false)) {
+                            return true;
+                        }
+                    } catch (e) {
+                        // Continue
+                    }
+                    try {
+                        const bankIdBtn = getElementByPredicate(
+                            'type == "XCUIElementTypeButton" AND (name CONTAINS "BankID" OR label CONTAINS "BankID")'
+                        );
+                        if (await bankIdBtn.isDisplayed().catch(() => false)) {
+                            return true;
+                        }
+                    } catch (e) {
+                        // Continue
+                    }
+                    return false;
+                } catch (e) {
+                    return false;
+                }
+            },
+            { timeout: 30000, timeoutMsg: 'Authorization screen did not appear after clicking "Authorize"' }
+        );
+        logStep('forgotCode', 'AUTH screen confirmed after forgot code');
     });
 }
 

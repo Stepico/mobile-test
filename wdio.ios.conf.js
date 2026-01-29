@@ -7,7 +7,8 @@ const iosAppPath = process.env.IOS_APP_PATH ||
     path.join(__dirname, 'ios-app', 'DiiaOpenSource.app');
 const iosBundleId = process.env.IOS_BUNDLE_ID || 'ua.gov.diia.opensource.app';
 const iosDeviceName = process.env.IOS_DEVICE_NAME || 'iPhone 16 Pro';
-const iosPlatformVersion = process.env.IOS_PLATFORM_VERSION || '18.5';
+// Локально використовуємо 18.2 (типово є в Xcode); в CI задається IOS_PLATFORM_VERSION (наприклад 18.5)
+const iosPlatformVersion = process.env.IOS_PLATFORM_VERSION || '18.2';
 
 // Перевірка існування app bundle з детальним повідомленням
 if (!fs.existsSync(iosAppPath)) {
@@ -56,7 +57,7 @@ exports.config = {
         'appium:bundleId': iosBundleId,
         'appium:noReset': false,
         'appium:fullReset': false,  // Full reset to clean state before tests
-        'appium:wdaLaunchTimeout': 60000,
+        'appium:wdaLaunchTimeout': 120000, // 2 minutes for WebDriverAgent launch (increased for CI)
         'appium:newCommandTimeout': 1800, // 30 minutes timeout for long-running tests
         'appium:showXcodeLog': true,
         'appium:useSimpleBuildTest': true
@@ -69,7 +70,7 @@ exports.config = {
     logLevel: 'info',
     bail: 0,
     waitforTimeout: 10000,
-    connectionRetryTimeout: process.env.CI ? 180000 : 120000, // Збільшений timeout для CI
+    connectionRetryTimeout: process.env.CI ? 300000 : 120000, // 5 minutes for CI (large app install), 2 minutes local
     connectionRetryCount: 2,
     services: ['appium'],
     framework: 'mocha',

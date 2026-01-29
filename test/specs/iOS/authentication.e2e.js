@@ -20,7 +20,8 @@ const {
     assertGreeting,
     assertPopup,
     restart,
-    enterPinCode
+    enterPinCode,
+    waitForLoadingToComplete
 } = require(path.resolve(__dirname, '../../../helpers/helper-iOS.js'));
 
 describe('Auth test suite', () => {
@@ -104,17 +105,25 @@ describe('Auth test suite', () => {
         await setupTestState(SCREEN_STATE.PIN_LOGIN, { pinCode: '0' });
         
         // Test logic
+        // forgotCode() now ensures we're on AUTH screen at the end
         await forgotCode();
-        await ensureState(SCREEN_STATE.AUTH);
+        // Small delay to ensure UI is stable before authorizing
+        await driver.pause(1000);
         await authorize('1');
         await assertGreeting();
     });
 
     it('user should be able to log in with new code after changing it (via "Forgot code" feature)', async () => {
-        // Setup: start from PIN_LOGIN screen with PIN '1' set
+        // Setup: start from PIN_LOGIN screen with PIN '1' set (after forgotCode in previous test)
         await setupTestState(SCREEN_STATE.PIN_LOGIN, { pinCode: '1' });
         
         // Test logic
+        // Verify we're on PIN login screen before login
+        const currentState = await detectScreen();
+        if (currentState !== SCREEN_STATE.PIN_LOGIN) {
+            // If not on PIN login, ensure we are
+            await ensureOnPinLoginScreen(15000);
+        }
         await login('1');
         await assertGreeting();
     });
@@ -303,8 +312,66 @@ describe('Auth test suite', () => {
         await authorizeBtn.waitForDisplayed({ timeout: 5000 });
         await authorizeBtn.click();
 
-        // After clicking, we're back on AUTH screen - reauthorize with new PIN '4'
-        await driver.pause(1000);
+        // After clicking "Авторизуватися", wait for AUTH screen to appear
+        await driver.pause(2000);
+        
+        // Wait for AUTH screen with retry logic
+        await driver.waitUntil(
+            async () => {
+                try {
+                    // Wait for loading to complete first
+                    await waitForLoadingToComplete(10000).catch(() => {});
+                    
+                    // Check if we're on AUTH screen
+                    const state = await detectScreen();
+                    if (state === SCREEN_STATE.AUTH) {
+                        return true;
+                    }
+                    
+                    // Also check for auth screen elements directly
+                    try {
+                        const checkbox = getElementByAccessibilityId('checkbox_conditions_bordered_auth');
+                        if (await checkbox.isDisplayed().catch(() => false)) {
+                            return true;
+                        }
+                    } catch (e) {
+                        // Continue
+                    }
+                    
+                    try {
+                        const bankIdBtn = getElementByPredicate(
+                            'type == "XCUIElementTypeButton" AND (name CONTAINS "BankID" OR label CONTAINS "BankID")'
+                        );
+                        if (await bankIdBtn.isDisplayed().catch(() => false)) {
+                            return true;
+                        }
+                    } catch (e) {
+                        // Continue
+                    }
+                    
+                    // Check page source for auth indicators
+                    try {
+                        const pageSource = await driver.getPageSource();
+                        if (pageSource.includes('checkbox_conditions_bordered_auth') || 
+                            (pageSource.includes('BankID НБУ') && !pageSource.includes('menuSettings'))) {
+                            return true;
+                        }
+                    } catch (e) {
+                        // Session might be temporarily unavailable, continue waiting
+                        return false;
+                    }
+                    
+                    return false;
+                } catch (e) {
+                    // If session is unavailable, wait a bit and retry
+                    await driver.pause(1000);
+                    return false;
+                }
+            },
+            { timeout: 30000, timeoutMsg: 'AUTH screen did not appear after clicking "Авторизуватися"' }
+        );
+
+        // Reauthorize with new PIN '4'
         await authorize('4');
         await assertGreeting();
     });
