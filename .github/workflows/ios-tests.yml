@@ -142,22 +142,79 @@ jobs:
         run: |
           cd ios-diia
           
-          # Виправлення API URL
-          find . -name "*.xcconfig" -type f -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} +
-          echo "API URL оновлено"
+          echo "=== Патчимо API URL: api2oss → api2s ==="
           
+          # Виправлення API URL в ВСІХ файлах (не тільки xcconfig)
+          # Шукаємо в .xcconfig, .swift, .plist, .json, .xml
+          find . \( -name "*.xcconfig" -o -name "*.swift" -o -name "*.plist" -o -name "*.json" -o -name "*.xml" \) \
+            -type f \
+            -not -path "*/\.*" \
+            -not -path "*/Pods/*" \
+            -not -path "*/build/*" \
+            -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} +
+          
+          echo "API URL замінено в всіх знайдених файлах"
+          
+          # Верифікація: перевіряємо чи залишились старі URL
+          echo ""
+          echo "=== Перевірка: шукаємо api2oss (старий URL) ==="
+          OLD_URL_COUNT=$(grep -r "api2oss\.diia\.gov\.ua" . --include="*.xcconfig" --include="*.swift" --include="*.plist" 2>/dev/null | wc -l || echo "0")
+          if [ "$OLD_URL_COUNT" -gt 0 ]; then
+            echo "⚠️  УВАГА: Знайдено $OLD_URL_COUNT входжень старого URL:"
+            grep -r "api2oss\.diia\.gov\.ua" . --include="*.xcconfig" --include="*.swift" --include="*.plist" 2>/dev/null || true
+          else
+            echo "✅ Старих URL не знайдено - патч успішний"
+          fi
+          
+          # Показуємо нові URL для підтвердження
+          echo ""
+          echo "=== Перевірка: шукаємо api2s (новий URL) ==="
+          NEW_URL_COUNT=$(grep -r "api2s\.diia\.gov\.ua" . --include="*.xcconfig" --include="*.swift" --include="*.plist" 2>/dev/null | wc -l || echo "0")
+          echo "✅ Знайдено $NEW_URL_COUNT входжень нового URL"
+          if [ "$NEW_URL_COUNT" -gt 0 ]; then
+            echo "Приклади:"
+            grep -r "api2s\.diia\.gov\.ua" . --include="*.xcconfig" --include="*.swift" --include="*.plist" 2>/dev/null | head -5 || true
+          fi
+          
+          echo ""
+          echo "=== Патч AppConfigurator.swift ==="
           # Виправлення AppConfigurator.swift (якщо є помилка imageNameProvider)
           if [ -f "DiiaOpenSource/AppConfigurator.swift" ]; then
             # Видаляємо параметр imageNameProvider якщо він є
             sed -i '' 's/, imageNameProvider: [^)]*//g' DiiaOpenSource/AppConfigurator.swift
             sed -i '' 's/imageNameProvider: [^,)]*,\?//g' DiiaOpenSource/AppConfigurator.swift
-            echo "AppConfigurator.swift пропатчено"
+            echo "✅ AppConfigurator.swift пропатчено"
+          else
+            echo "⚠️  AppConfigurator.swift не знайдено"
           fi
+
+      - name: Очищення build кешу для чистої збірки
+        run: |
+          echo "Очищаємо Xcode build кеш для гарантії що app зберется з новим API..."
+          cd ios-diia
+          
+          # Очищаємо DerivedData (там може бути закешений старий конфіг)
+          if [ -d "~/Library/Developer/Xcode/DerivedData" ]; then
+            rm -rf ~/Library/Developer/Xcode/DerivedData
+            echo "✅ DerivedData очищено"
+          fi
+          
+          # Очищаємо build директорію проекту
+          if [ -d "build" ]; then
+            rm -rf build
+            echo "✅ Build директорія очищена"
+          fi
+          
+          # Xcode clean
+          xcodebuild clean -workspace DiiaOpenSource.xcworkspace -scheme DiiaOpenSource -configuration Debug 2>/dev/null || echo "Clean виконано (деякі помилки ігноруємо)"
+          
+          echo "✅ Build кеш очищено - app зберется з нуля з правильним API URL"
 
       - name: Збірка iOS додатку для Simulator
         id: build-app
         run: |
           echo "Починаємо збірку iOS додатку..."
+          echo "ВАЖЛИВО: Збірка відбувається ПІСЛЯ патчу API URL (api2oss → api2s)"
           bash scripts/ios/build-app.sh
           echo "Збірка завершена"
         env:
@@ -199,6 +256,61 @@ jobs:
           APP_SIZE=$(du -sh "$APP_PATH" | cut -f1)
           echo "Розмір: $APP_SIZE"
           
+          echo ""
+          echo "=== ✅ КРИТИЧНО: Перевірка API URL в зібраній app ==="
+          echo "Шукаємо API URL в Info.plist та інших конфігах..."
+          
+          # Перевіряємо Info.plist
+          if [ -f "$APP_PATH/Info.plist" ]; then
+            echo ""
+            echo "📄 Info.plist:"
+            # Конвертуємо в XML для читабельності
+            plutil -convert xml1 "$APP_PATH/Info.plist" -o /tmp/Info.plist.xml
+            
+            # Шукаємо API URLs
+            if grep -i "api.*diia.*gov" /tmp/Info.plist.xml; then
+              echo "✅ Знайдено API URL в Info.plist"
+            else
+              echo "⚠️  API URL не знайдено в Info.plist (можливо нормально)"
+            fi
+            
+            # Перевіряємо чи є старий URL
+            if grep -i "api2oss\.diia\.gov\.ua" /tmp/Info.plist.xml; then
+              echo "❌ ПОМИЛКА: Знайдено СТАРИЙ URL api2oss в Info.plist!"
+              echo "Патч НЕ СПРАЦЮВАВ для Info.plist"
+            fi
+            
+            # Перевіряємо чи є новий URL
+            if grep -i "api2s\.diia\.gov\.ua" /tmp/Info.plist.xml; then
+              echo "✅ Знайдено НОВИЙ URL api2s в Info.plist"
+            fi
+          fi
+          
+          # Шукаємо в binary (strings command)
+          echo ""
+          echo "🔍 Шукаємо API URL в app binary..."
+          APP_BINARY="$APP_PATH/DiiaOpenSource"
+          if [ -f "$APP_BINARY" ]; then
+            echo "Старий URL (api2oss):"
+            if strings "$APP_BINARY" | grep -i "api2oss\.diia\.gov\.ua" | head -3; then
+              echo "❌ КРИТИЧНА ПОМИЛКА: СТАРИЙ URL знайдено в binary!"
+              echo "Це означає що app зібрався з неправильним конфігом"
+            else
+              echo "✅ Старий URL НЕ знайдено в binary"
+            fi
+            
+            echo ""
+            echo "Новий URL (api2s):"
+            if strings "$APP_BINARY" | grep -i "api2s\.diia\.gov\.ua" | head -3; then
+              echo "✅ Новий URL знайдено в binary - патч спрацював!"
+            else
+              echo "❌ КРИТИЧНА ПОМИЛКА: НОВИЙ URL НЕ знайдено в binary!"
+              echo "Це означає що патч НЕ СПРАЦЮВАВ або app зібрався з кешу"
+            fi
+          fi
+          
+          echo ""
+          echo "=== Результат перевірки ==="
           # Зберігаємо для job summary
           echo "app_size=$APP_SIZE" >> $GITHUB_OUTPUT
           echo "bundle_id=$BUNDLE_ID" >> $GITHUB_OUTPUT
@@ -266,7 +378,6 @@ jobs:
           echo "Device UDID: ${IOS_DEVICE_UDID}"
           echo "Device name: ${IOS_DEVICE_NAME}"
           echo "Platform version: ${IOS_PLATFORM_VERSION}"
-          echo "Skip auth tests: ${SKIP_AUTH_TESTS}"
           echo ""
           echo "=== Перевірка app перед запуском ==="
           ls -lh "${IOS_APP_PATH}"
@@ -276,7 +387,6 @@ jobs:
         env:
           IOS_APP_PATH: ./ios-app/DiiaOpenSource.app
           IOS_DEVICE_UDID: ${{ steps.boot-sim.outputs.udid }}
-          SKIP_AUTH_TESTS: 'true'  # Skip auth tests until BankID API is fixed
         timeout-minutes: 60  # Збільшено timeout для великого app
 
       # ========================================

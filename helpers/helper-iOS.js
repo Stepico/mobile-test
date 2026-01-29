@@ -948,8 +948,9 @@ async function authorize(codeDigit) {
         await driver.pause(500); // Wait for WebView to process click
 
         // Вводимо токен в поле вводу
-        const TOKEN = 'B7B5908CFBA2DBDA1BE9';
-        console.log(`[DEBUG] authorize() | Початок введення токену: ${TOKEN} (довжина: ${TOKEN.length})`);
+        // Можна передати через env variable BANKID_TOKEN або використати дефолтний
+        const TOKEN = process.env.BANKID_TOKEN || 'B7B5908CFBA2DBDA1BE9';
+        console.log(`[DEBUG] authorize() | Використовуємо токен: ${TOKEN.substring(0, 4)}...${TOKEN.substring(TOKEN.length - 4)} (довжина: ${TOKEN.length})`);
         
         let tokenInput;
         try {
@@ -1041,6 +1042,8 @@ async function authorize(codeDigit) {
         // Знаходимо кнопку SignIn
         const signinBtn = getElementByAccessibilityId('SignIn');
         await expect(signinBtn).toBeDisplayed();
+        
+        logStep('authorize', 'Clicking SignIn button - calling BankID API...');
         await signinBtn.click();
         
         // Wait for response from BankID API (check for errors first)
@@ -1048,8 +1051,25 @@ async function authorize(codeDigit) {
         
         // Check if BankID API returned an error
         const pageSourceAfterSignIn = await driver.getPageSource();
+        
+        // Детальна діагностика відповіді
         if (pageSourceAfterSignIn.includes('NotFoundError') || pageSourceAfterSignIn.includes('Not found')) {
-            logStep('authorize', 'BankID API returned error 404 - clicking back and restarting');
+            logStep('authorize', '❌ BankID API returned error 404');
+            console.log('[ERROR] BankID API Response contains:');
+            
+            // Витягуємо JSON помилку якщо є
+            const errorMatch = pageSourceAfterSignIn.match(/"name"\s*:\s*"NotFoundError"[\s\S]{0,200}/);
+            if (errorMatch) {
+                console.log('[ERROR] Error details:', errorMatch[0]);
+            }
+            
+            // Показуємо що було надіслано
+            console.log('[ERROR] Request parameters:');
+            console.log(`  - Bank: Банк НаДія`);
+            console.log(`  - Token: ${TOKEN.substring(0, 4)}...${TOKEN.substring(TOKEN.length - 4)}`);
+            console.log(`  - Token length: ${TOKEN.length}`);
+            
+            logStep('authorize', 'Clicking back and restarting...');
             
             // Click back button to return
             try {
