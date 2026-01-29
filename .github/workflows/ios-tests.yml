@@ -101,6 +101,8 @@ jobs:
       - name: Встановлення npm залежностей
         run: |
           echo "Встановлюємо npm пакети..."
+          # Очищаємо npm cache
+          npm cache clean --force
           # Видаляємо старий package-lock якщо є проблеми з версіями
           rm -f package-lock.json
           npm install
