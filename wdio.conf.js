@@ -149,7 +149,15 @@ exports.config = {
 
     afterTest: async function (test, context, { passed }) {
         if (!passed) {
-            const safeName = test.title.replace(/\s+/g, '_');
+            // Replace unsafe characters: spaces, quotes, parentheses, slashes, etc.
+            // GitHub Actions artifacts don't allow: " \ / : * ? < > |
+            const safeName = test.title
+                .replace(/\s+/g, '_')           // spaces to underscore
+                .replace(/["'`]/g, '')          // remove quotes
+                .replace(/[\\/:*?<>|]/g, '_')   // replace unsafe chars
+                .replace(/[()[\]{}]/g, '_')     // replace brackets
+                .replace(/_+/g, '_')            // collapse multiple underscores
+                .replace(/^_|_$/g, '');         // trim underscores
             const timestamp = Date.now();
 
             const screenshotPath = `./artifacts/screenshots/${safeName}-${timestamp}.png`;
