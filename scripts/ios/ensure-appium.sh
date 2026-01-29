@@ -34,10 +34,21 @@ echo "✅ Appium встановлено: $APPIUM_VERSION_INSTALLED"
 
 # Встановлюємо/оновлюємо XCUITest driver
 echo "Встановлюємо/оновлюємо XCUITest driver..."
-appium driver install xcuitest || appium driver update xcuitest || {
-    echo "⚠️ Помилка встановлення driver, спроба через appium driver install..."
-    appium driver install xcuitest --force
-}
+# Спочатку перевіряємо чи вже встановлено
+if appium driver list --installed 2>&1 | grep -qi "xcuitest"; then
+    echo "XCUITest driver вже встановлено, оновлюємо..."
+    appium driver update xcuitest || {
+        echo "⚠️ Помилка оновлення driver, переmstановлюємо..."
+        appium driver uninstall xcuitest
+        appium driver install xcuitest
+    }
+else
+    echo "XCUITest driver не встановлено, встановлюємо..."
+    appium driver install xcuitest || {
+        echo "⚠️ Помилка встановлення driver"
+        exit 1
+    }
+fi
 
 # Перевіряємо встановлені drivers
 echo ""

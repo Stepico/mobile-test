@@ -61,23 +61,23 @@ jobs:
       # КРОК 1: Підготовка середовища
       # ========================================
       
-      - name: 📥 Checkout тестового репозиторію
+      - name: Checkout тестового репозиторію
         uses: actions/checkout@v4
         with:
           fetch-depth: 1  # Shallow clone для швидкості
 
-      - name: 🔧 Налаштування Node.js
+      - name: Налаштування Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'  # Кешування npm пакетів
 
-      - name: 🍎 Вибір версії Xcode
+      - name: Вибір версії Xcode
         run: |
           sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
-          echo "✅ Xcode шлях встановлено"
+          echo "Xcode шлях встановлено"
 
-      - name: 📋 Інформація про Xcode та доступні симулятори
+      - name: Інформація про Xcode та доступні симулятори
         run: |
           echo "=== Xcode версія ==="
           xcodebuild -version
@@ -92,13 +92,13 @@ jobs:
       # КРОК 2: Встановлення залежностей
       # ========================================
 
-      - name: 📦 Встановлення npm залежностей
+      - name: Встановлення npm залежностей
         run: |
           echo "Встановлюємо npm пакети..."
           npm ci
-          echo "✅ npm залежності встановлено"
+          echo "npm залежності встановлено"
 
-      - name: 🤖 Кеш Appium
+      - name: Кеш Appium
         id: cache-appium
         uses: actions/cache@v4
         with:
@@ -109,56 +109,57 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-appium-
 
-      - name: 🚀 Встановлення Appium + XCUITest driver
+      - name: Встановлення Appium + XCUITest driver
         run: |
           echo "Встановлюємо Appium та XCUITest driver..."
           bash scripts/ios/ensure-appium.sh
           echo ""
-          echo "✅ Appium готовий до роботи"
+          echo "Appium готовий до роботи"
 
       # ========================================
       # КРОК 3: Збірка iOS додатку
       # ========================================
 
-      - name: 📥 Checkout iOS source репозиторію
+      - name: Checkout iOS source репозиторію
         uses: actions/checkout@v4
         with:
           repository: diia-open-source/ios-diia
+          ref: 'v1.0.76'  # Використовуємо останню стабільну версію замість main
           path: ios-diia
           fetch-depth: 1
 
-      - name: 🔨 Збірка iOS додатку для Simulator
+      - name: Збірка iOS додатку для Simulator
         id: build-app
         run: |
           echo "Починаємо збірку iOS додатку..."
           bash scripts/ios/build-app.sh
-          echo "✅ Збірка завершена"
+          echo "Збірка завершена"
         env:
           IOS_SOURCE_DIR: ./ios-diia
         continue-on-error: false  # Якщо збірка падає - зупиняємо workflow
 
-      - name: ✅ Перевірка app bundle
+      - name: Перевірка app bundle
         id: verify-app
         run: |
           APP_PATH="./ios-app/DiiaOpenSource.app"
           
           if [ ! -d "$APP_PATH" ]; then
-            echo "❌ App bundle не знайдено в $APP_PATH"
+            echo "App bundle не знайдено в $APP_PATH"
             echo ""
             echo "=== Діагностика ==="
             echo "Структура ios-app директорії:"
-            ls -la ./ios-app/ 2>/dev/null || echo "❌ Директорія ios-app не існує"
+            ls -la ./ios-app/ 2>/dev/null || echo "Директорія ios-app не існує"
             echo ""
             echo "Останні 100 рядків build логу:"
             if [ -f "./ios-build/xcodebuild.log" ]; then
               tail -100 ./ios-build/xcodebuild.log
             else
-              echo "❌ Build лог не знайдено"
+              echo "Build лог не знайдено"
             fi
             exit 1
           fi
           
-          echo "✅ App bundle знайдено: $APP_PATH"
+          echo "App bundle знайдено: $APP_PATH"
           echo ""
           echo "=== Інформація про app bundle ==="
           ls -lh "$APP_PATH"
@@ -180,36 +181,36 @@ jobs:
       # КРОК 4: Запуск iOS Simulator
       # ========================================
 
-      - name: 📱 Запуск iOS Simulator
+      - name: Запуск iOS Simulator
         id: boot-sim
         run: |
           echo "Запускаємо iOS Simulator..."
           bash scripts/ios/boot-sim.sh
-          echo "✅ Simulator запущено"
+          echo "Simulator запущено"
         env:
           OPEN_SIMULATOR: false  # Не відкриваємо GUI в CI
 
-      - name: ✅ Перевірка стану Simulator
+      - name: Перевірка стану Simulator
         run: |
           echo "Перевіряємо чи Simulator запущено..."
           BOOTED_DEVICE=$(xcrun simctl list devices | grep "Booted" || echo "")
           
           if [ -z "$BOOTED_DEVICE" ]; then
-            echo "❌ Simulator не запущено або не в статусі Booted"
+            echo "Simulator не запущено або не в статусі Booted"
             echo ""
             echo "=== Доступні пристрої ==="
             xcrun simctl list devices
             exit 1
           fi
           
-          echo "✅ Simulator запущено:"
+          echo "Simulator запущено:"
           echo "$BOOTED_DEVICE"
 
       # ========================================
       # КРОК 5: Запуск тестів
       # ========================================
 
-      - name: 🧪 Запуск iOS E2E тестів
+      - name: Запуск iOS E2E тестів
         id: run-tests
         run: |
           echo "Запускаємо iOS тести..."
@@ -224,7 +225,7 @@ jobs:
       # КРОК 6: Збір артефактів при помилках
       # ========================================
 
-      - name: 📸 Завантаження скріншотів (при помилці)
+      - name: Завантаження скріншотів (при помилці)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -233,7 +234,7 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: 📄 Завантаження page source (при помилці)
+      - name: Завантаження page source (при помилці)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -242,7 +243,7 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: 📋 Завантаження build логів (при помилці)
+      - name: Завантаження build логів (при помилці)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -251,7 +252,7 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: 🤖 Завантаження Appium логів (при помилці)
+      - name: Завантаження Appium логів (при помилці)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -262,7 +263,7 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: 📊 Завантаження WebDriver логів (при помилці)
+      - name: Завантаження WebDriver логів (при помилці)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -276,14 +277,14 @@ jobs:
       # КРОК 7: Job Summary
       # ========================================
 
-      - name: 📝 Створення job summary
+      - name: Створення job summary
         if: always()
         run: |
-          echo "## 📱 iOS Tests Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## iOS Tests Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Конфігурація
-          echo "### 🔧 Конфігурація" >> $GITHUB_STEP_SUMMARY
+          echo "### Конфігурація" >> $GITHUB_STEP_SUMMARY
           echo "- **Пристрій**: ${{ env.IOS_DEVICE_NAME }}" >> $GITHUB_STEP_SUMMARY
           echo "- **iOS версія**: ${{ env.IOS_PLATFORM_VERSION }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Bundle ID**: ${{ steps.verify-app.outputs.bundle_id || 'N/A' }}" >> $GITHUB_STEP_SUMMARY
@@ -291,21 +292,21 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Статус тестів
-          echo "### 🧪 Результати тестів" >> $GITHUB_STEP_SUMMARY
+          echo "### Результати тестів" >> $GITHUB_STEP_SUMMARY
           if [ "${{ steps.run-tests.outcome }}" == "success" ]; then
-            echo "✅ **Всі тести пройшли успішно**" >> $GITHUB_STEP_SUMMARY
+            echo "**Всі тести пройшли успішно**" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ **Тести завершились з помилками**" >> $GITHUB_STEP_SUMMARY
+            echo "**Тести завершились з помилками**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "Перегляньте артефакти для детальної інформації:" >> $GITHUB_STEP_SUMMARY
-            echo "- 📸 Скріншоти помилок" >> $GITHUB_STEP_SUMMARY
-            echo "- 📄 Page source файли" >> $GITHUB_STEP_SUMMARY
-            echo "- 📋 Build та Appium логи" >> $GITHUB_STEP_SUMMARY
+            echo "- Скріншоти помилок" >> $GITHUB_STEP_SUMMARY
+            echo "- Page source файли" >> $GITHUB_STEP_SUMMARY
+            echo "- Build та Appium логи" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Xcode інформація
-          echo "### 🍎 Xcode Environment" >> $GITHUB_STEP_SUMMARY
+          echo "### Xcode Environment" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           xcodebuild -version >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
