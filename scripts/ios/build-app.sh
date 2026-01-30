@@ -155,6 +155,7 @@ echo "Build destination: $DESTINATION"
 echo ""
 
 if [ "$BUILD_TYPE" = "workspace" ]; then
+    # FIX Bug 2: Use PIPESTATUS to capture xcodebuild exit code with tee
     xcodebuild \
         -workspace "$BUILD_PATH" \
         -scheme "$SCHEME" \
@@ -163,13 +164,18 @@ if [ "$BUILD_TYPE" = "workspace" ]; then
         -destination "$DESTINATION" \
         -derivedDataPath "$ABS_BUILD_DIR/DerivedData" \
         clean build \
-        2>&1 | tee "$ABS_BUILD_DIR/xcodebuild.log" || {
-        echo "❌ Помилка build iOS app"
-        echo "Останні 100 рядків логу:"
+        2>&1 | tee "$ABS_BUILD_DIR/xcodebuild.log"
+    
+    # Check xcodebuild exit code from pipe
+    if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+        echo "❌ Помилка build iOS app (exit code: ${PIPESTATUS[0]})"
+        echo ""
+        echo "=== Останні 100 рядків логу ==="
         tail -100 "$ABS_BUILD_DIR/xcodebuild.log"
         exit 1
-    }
+    fi
 else
+    # FIX Bug 2: Use PIPESTATUS to capture xcodebuild exit code with tee
     xcodebuild \
         -project "$BUILD_PATH" \
         -scheme "$SCHEME" \
@@ -178,12 +184,16 @@ else
         -destination "$DESTINATION" \
         -derivedDataPath "$ABS_BUILD_DIR/DerivedData" \
         clean build \
-        2>&1 | tee "$ABS_BUILD_DIR/xcodebuild.log" || {
-        echo "❌ Помилка build iOS app"
-        echo "Останні 100 рядків логу:"
+        2>&1 | tee "$ABS_BUILD_DIR/xcodebuild.log"
+    
+    # Check xcodebuild exit code from pipe
+    if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+        echo "❌ Помилка build iOS app (exit code: ${PIPESTATUS[0]})"
+        echo ""
+        echo "=== Останні 100 рядків логу ==="
         tail -100 "$ABS_BUILD_DIR/xcodebuild.log"
         exit 1
-    }
+    fi
 fi
 
 # Перевіряємо, чи build дійсно завершився успішно

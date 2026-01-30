@@ -12,11 +12,19 @@ set -euo pipefail
 IOS_SOURCE_DIR="${1:-.}"
 BUILD_DIR="${2:-../ios-build}"
 
+# ============================================================================
+# FIX Bug 1: Convert BUILD_DIR to absolute path BEFORE cd
+# ============================================================================
+# Якщо BUILD_DIR відносний, конвертуємо в absolute path
+if [[ "$BUILD_DIR" != /* ]]; then
+  BUILD_DIR="$(cd "$(dirname "$BUILD_DIR")" && pwd)/$(basename "$BUILD_DIR")"
+fi
+
 cd "$IOS_SOURCE_DIR"
 
 echo "=== Патч Swift Package Dependencies: api2oss → api2s ==="
 echo "iOS Source: $(pwd)"
-echo "Build Dir: $BUILD_DIR"
+echo "Build Dir (absolute): $BUILD_DIR"
 echo ""
 
 # ============================================================================
@@ -24,14 +32,20 @@ echo ""
 # ============================================================================
 echo "КРОК 1: Resolve SPM dependencies (download з GitHub)..."
 
+# FIX Bug 2: Use PIPESTATUS to capture xcodebuild exit code with tee
 xcodebuild -resolvePackageDependencies \
   -workspace DiiaOpenSource.xcworkspace \
   -scheme DiiaOpenSource \
-  -configuration Debug 2>&1 | tee /tmp/resolve.log || {
-    echo "❌ Package resolve failed"
-    tail -50 /tmp/resolve.log
-    exit 1
-  }
+  -configuration Debug 2>&1 | tee /tmp/resolve.log
+  
+# Check xcodebuild exit code (pipe status)
+if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+  echo "❌ Package resolve failed (exit code: ${PIPESTATUS[0]})"
+  echo ""
+  echo "=== Останні 50 рядків логу ==="
+  tail -50 /tmp/resolve.log
+  exit 1
+fi
 
 echo "✅ SPM dependencies resolved"
 echo ""
