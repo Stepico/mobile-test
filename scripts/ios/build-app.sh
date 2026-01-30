@@ -118,9 +118,49 @@ done
 # Повертаємося до root директорії проекту (скрипт міг бути викликаний з ios-diia)
 cd "$REPO_ROOT"
 
-# Створюємо директорії для build
-mkdir -p "$BUILD_DIR/DerivedData"
+# ============================================================================
+# CRITICAL: СЕЛЕКТИВНЕ ОЧИЩЕННЯ (preserve SPM packages!)
+# ============================================================================
+echo "=== КРОК: Селективне очищення build кешів ==="
+
+# 1. Видалити build artifacts але ЗБЕРЕГТИ SourcePackages (SPM)
+if [ -d "$BUILD_DIR/DerivedData" ]; then
+  echo "Очищаємо DerivedData build artifacts (зберігаючи SPM packages)..."
+  
+  # Зберігаємо SourcePackages якщо існує
+  if [ -d "$BUILD_DIR/DerivedData/SourcePackages" ]; then
+    echo "✅ SourcePackages знайдено - зберігаємо пропатчені SPM packages"
+    mv "$BUILD_DIR/DerivedData/SourcePackages" "$BUILD_DIR/SourcePackages.backup" 2>/dev/null || true
+  fi
+  
+  # Видаляємо DerivedData
+  rm -rf "$BUILD_DIR/DerivedData"
+  
+  # Відновлюємо SourcePackages
+  mkdir -p "$BUILD_DIR/DerivedData"
+  if [ -d "$BUILD_DIR/SourcePackages.backup" ]; then
+    mv "$BUILD_DIR/SourcePackages.backup" "$BUILD_DIR/DerivedData/SourcePackages"
+    echo "✅ SPM packages відновлено (пропатчені)"
+  else
+    echo "⚠️  SPM packages не знайдено - build скачає fresh (unpатчені?)"
+  fi
+else
+  mkdir -p "$BUILD_DIR/DerivedData"
+  echo "✅ DerivedData створено (fresh)"
+fi
+
+# 2. Видалити output directory для чистого copy
+if [ -d "$OUTPUT_DIR" ]; then
+  echo "Видаляємо старий output..."
+  rm -rf "$OUTPUT_DIR"
+  echo "✅ Output директорія очищена"
+fi
+
+# 3. Створюємо output directory
 mkdir -p "$OUTPUT_DIR"
+
+echo "✅ Build directories готові (SPM packages збережено)"
+echo ""
 
 # Абсолютні шляхи (with validation - set -e doesn't work in command substitutions!)
 if ! cd "$IOS_SOURCE_DIR" 2>/dev/null; then
@@ -170,6 +210,35 @@ fi
 DESTINATION="platform=iOS Simulator,name=${DEVICE_NAME},OS=${PLATFORM_VERSION}"
 echo "Build destination: $DESTINATION"
 echo ""
+
+# ============================================================================
+# CRITICAL: xcodebuild clean для видалення incremental build artifacts
+# ============================================================================
+echo "=== КРОК: xcodebuild clean (guaranteed fresh build) ==="
+
+if [ "$BUILD_TYPE" = "workspace" ]; then
+    xcodebuild clean \
+        -workspace "$BUILD_PATH" \
+        -scheme "$SCHEME" \
+        -configuration Debug \
+        -sdk iphonesimulator \
+        -destination "$DESTINATION" 2>&1 | head -20 || echo "Clean warning (ignoring)"
+else
+    xcodebuild clean \
+        -project "$BUILD_PATH" \
+        -scheme "$SCHEME" \
+        -configuration Debug \
+        -sdk iphonesimulator \
+        -destination "$DESTINATION" 2>&1 | head -20 || echo "Clean warning (ignoring)"
+fi
+
+echo "✅ xcodebuild clean завершено"
+echo ""
+
+# ============================================================================
+# КРОК: xcodebuild build (clean build з isolated DerivedData)
+# ============================================================================
+echo "=== КРОК: xcodebuild build ==="
 
 if [ "$BUILD_TYPE" = "workspace" ]; then
     # FIX Bug 2: Use PIPESTATUS to capture xcodebuild exit code with tee

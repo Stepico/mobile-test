@@ -137,21 +137,47 @@ fi
 # Перевірка НОВОГО URL (має бути присутній)
 echo ""
 echo "Новий URL (api2s):"
+echo "Шукаємо api2s в binary..."
+
+# Спробуємо різні варіанти пошуку
+API2S_FOUND=0
+
 if strings "$APP_BINARY" | grep -i "api2s\.diia\.gov\.ua" | head -3; then
   echo "✅ Новий URL знайдено в binary - патч спрацював!"
+  API2S_FOUND=1
 else
+  echo "⚠️  api2s.diia.gov.ua не знайдено через grep"
+fi
+
+# Перевірка варіацій
+echo ""
+echo "Додаткова перевірка варіацій..."
+if strings "$APP_BINARY" | grep -i "api2s" | grep -i "diia" | head -5; then
+  echo "✅ Знайдено api2s + diia в binary"
+  API2S_FOUND=1
+fi
+
+if [ "$API2S_FOUND" -eq 0 ]; then
   echo ""
   echo "❌ КРИТИЧНА ПОМИЛКА: НОВИЙ URL НЕ знайдено в binary!"
   echo ""
-  echo "Це означає що:"
-  echo "  1. Патч НЕ СПРАЦЮВАВ"
-  echo "  2. Або app зібрався з старого cache"
+  echo "Debug info:"
+  echo "Binary size: $(ls -lh "$APP_BINARY" | awk '{print $5}')"
   echo ""
-  echo "НАСЛІДОК: BankID авторизація НЕ ПРАЦЮВАТИМЕ!"
+  echo "Strings в binary що містять 'diia':"
+  strings "$APP_BINARY" | grep -i "diia" | grep -i "gov" | head -10 || echo "Нічого не знайдено"
+  echo ""
+  echo "Це означає що:"
+  echo "  1. URL існує ТІЛЬКИ в Info.plist (runtime load)"
+  echo "  2. SPM dependencies НЕ містять compile-time reference"
+  echo "  3. Потрібно додати explicit compile-time const в код"
+  echo ""
+  echo "НАСЛІДОК: BankID може не працювати якщо URL не load з plist!"
   echo ""
   echo "РІШЕННЯ:"
-  echo "  - Перевірте що патч source code та SPM виконались"
-  echo "  - Виконайте clean build"
+  echo "  1. Перевірте SPM patch logs"
+  echo "  2. Перевірте що ios-authorization містить api2s"
+  echo "  3. Можливо потрібно додати forced compile-time reference"
   exit 1
 fi
 

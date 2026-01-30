@@ -188,47 +188,56 @@ jobs:
             echo "⚠️  AppConfigurator.swift не знайдено"
           fi
 
+      - name: Resolve та патч Swift Package Dependencies (ПЕРЕД clean!)
+        run: |
+          echo "=== CRITICAL: SPM patch перед clean build ==="
+          echo "Це гарантує що SPM packages пропатчені перед тим як build їх використає"
+          bash scripts/ios/patch-spm-dependencies.sh ios-diia ios-build
+          
+          echo ""
+          echo "✅ SPM packages пропатчені - готові для clean build"
+
       - name: Очищення build кешу для чистої збірки
         run: |
-          echo "Очищаємо Xcode build кеш для гарантії що app зберется з новим API..."
+          echo "=== Очищення build artifacts (НЕ SPM packages!) ==="
           cd ios-diia
           
-          # Очищаємо DerivedData (там може бути закешений старий конфіг)
-          if [ -d "~/Library/Developer/Xcode/DerivedData" ]; then
-            rm -rf ~/Library/Developer/Xcode/DerivedData
-            echo "✅ DerivedData очищено"
-          fi
-          
-          # Очищаємо build директорію проекту
+          # Очищаємо build директорію проекту (не SPM!)
           if [ -d "build" ]; then
             rm -rf build
             echo "✅ Build директорія очищена"
           fi
           
-          # Xcode clean
-          xcodebuild clean -workspace DiiaOpenSource.xcworkspace -scheme DiiaOpenSource -configuration Debug 2>/dev/null || echo "Clean виконано (деякі помилки ігноруємо)"
-          
-          echo "✅ Build кеш очищено - app зберется з нуля з правильним API URL"
-
-      - name: Resolve та патч Swift Package Dependencies
-        run: |
-          bash scripts/ios/patch-spm-dependencies.sh ios-diia ios-build
+          echo "⚠️  NOTE: isolated DerivedData буде очищено в build-app.sh"
+          echo "SPM packages залишаються пропатченими"
+          echo ""
+          echo "✅ Готові до clean build з пропатченими SPM"
 
       - name: Збірка iOS додатку для Simulator
         id: build-app
         run: |
           echo "Починаємо збірку iOS додатку..."
           echo "ВАЖЛИВО: Збірка відбувається ПІСЛЯ патчу API URL (api2oss → api2s)"
+          echo "CRITICAL: Clean build з isolated DerivedData для guaranteed fresh binary"
           bash scripts/ios/build-app.sh
           echo "Збірка завершена"
         env:
           IOS_SOURCE_DIR: ./ios-diia
         continue-on-error: false  # Якщо збірка падає - зупиняємо workflow
 
-      - name: Перевірка app bundle
+      - name: 🔍 CRITICAL VERIFICATION - API URL в binary
         id: verify-app
         run: |
+          echo "=== КРИТИЧНА ВЕРИФІКАЦІЯ ==="
+          echo "Перевіряємо що app binary містить api2s.diia.gov.ua"
+          echo "Це ОБОВ'ЯЗКОВО для BankID авторизації!"
+          echo ""
+          
           bash scripts/ios/verify-app-bundle.sh ./ios-app/DiiaOpenSource.app
+          
+          echo ""
+          echo "✅ VERIFICATION PASSED - App готовий для BankID тестів"
+        continue-on-error: false  # MUST fail if verification fails!
 
       # ========================================
       # КРОК 4: Запуск iOS Simulator
