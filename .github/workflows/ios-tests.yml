@@ -235,7 +235,39 @@ jobs:
             
             # Встановлюємо Pods з нуля
             pod install --repo-update || pod install
-            echo "✅ Pods переінстальовано з пропатченими конфігами"
+            echo "✅ Pods переінстальовано"
+            
+            echo ""
+            echo "=== КРОК 5: Патчимо встановлені Pods ==="
+            echo "КРИТИЧНО: Pods може містити хардкоджений api2oss - патчимо!"
+            
+            if [ -d "Pods" ]; then
+              # Патчимо всі файли в Pods директорії
+              echo "Шукаємо та патчимо api2oss в Pods..."
+              
+              # Показуємо скільки знайдено перед патчем
+              PODS_OLD_COUNT=$(grep -r "api2oss" Pods/ --include="*.swift" --include="*.m" --include="*.h" --include="*.strings" --include="*.plist" 2>/dev/null | wc -l | tr -d ' ')
+              echo "Знайдено $PODS_OLD_COUNT входжень api2oss в Pods"
+              
+              # Патчимо
+              find Pods/ \( -name "*.swift" -o -name "*.m" -o -name "*.h" -o -name "*.strings" -o -name "*.plist" -o -name "*.json" \) \
+                -type f \
+                -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} + \
+                -exec sed -i '' 's/"api2oss"/"api2s"/g' {} + \
+                -exec sed -i '' "s/'api2oss'/'api2s'/g" {} + \
+                -exec sed -i '' 's/@"api2oss"/@"api2s"/g' {} + 2>/dev/null || true
+              
+              # Перевірка після патчу
+              PODS_OLD_AFTER=$(grep -r "api2oss" Pods/ --include="*.swift" --include="*.m" --include="*.h" --include="*.strings" --include="*.plist" 2>/dev/null | wc -l | tr -d ' ')
+              echo "Після патчу залишилось: $PODS_OLD_AFTER входжень api2oss"
+              
+              if [ "$PODS_OLD_AFTER" -gt 0 ]; then
+                echo "⚠️  УВАГА: В Pods все ще є api2oss:"
+                grep -r "api2oss" Pods/ --include="*.swift" --include="*.m" --include="*.h" 2>/dev/null | head -5 || true
+              else
+                echo "✅ Pods повністю пропатчено - api2oss відсутній"
+              fi
+            fi
           else
             echo "ℹ️  Podfile не знайдено, пропускаємо"
           fi
@@ -264,12 +296,8 @@ jobs:
             echo "ℹ️  Build директорія не існує, пропускаємо"
           fi
           
-          # Очищаємо Pods кеш (там теж може бути старий конфіг)
-          if [ -d "Pods" ]; then
-            echo "Очищаємо Pods кеш..."
-            rm -rf Pods
-            echo "✅ Pods очищено"
-          fi
+          # НЕ чіпаємо Pods - вони вже пропатчені в попередньому кроці!
+          echo "ℹ️  Pods залишаємо (вже пропатчені в попередньому кроці)"
           
           # Xcode clean
           echo "Виконуємо xcodebuild clean..."
