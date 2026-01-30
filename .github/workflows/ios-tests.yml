@@ -335,9 +335,15 @@ jobs:
             
             PACKAGES_FOUND=false
             
+            # КРИТИЧНО: Enable nullglob щоб globs що не match повертали empty (не literal *)
+            shopt -s nullglob
+            
             for PKG_DIR_PATTERN in "${PACKAGE_DIRS[@]}"; do
               # Використовуємо glob для знаходження директорій
               for PKG_DIR in $PKG_DIR_PATTERN; do
+                # Skip якщо glob не expanded (залишився literal * - це fallback на випадок якщо nullglob не працює)
+                [[ "$PKG_DIR" == *"*"* ]] && continue
+                
                 if [ -d "$PKG_DIR" ]; then
                   echo "✅ Знайдено Swift packages в: $PKG_DIR"
                   PACKAGES_FOUND=true
@@ -373,6 +379,9 @@ jobs:
                 fi
               done
             done
+            
+            # Disable nullglob після використання
+            shopt -u nullglob
             
             if [ "$PACKAGES_FOUND" = false ]; then
               echo "ℹ️  Swift package checkouts ще не downloaded (це нормально)"
@@ -492,6 +501,9 @@ jobs:
           
           cd ios-diia || exit 1
           
+          # КРИТИЧНО: Accumulator для rebuild decision (не перезаписується в loops)
+          REBUILD_NEEDED=false
+          
           # Знаходимо DerivedData директорію для цього build
           BUILD_DERIVED_DATA="../ios-build/DerivedData"
           
@@ -542,6 +554,9 @@ jobs:
                   echo "Продовжуємо але app може працювати неправильно..."
                 else
                   echo "✅ Downloaded packages пропатчено - api2oss відсутній"
+                  # КРИТИЧНО: Помічаємо що потрібен rebuild
+                  REBUILD_NEEDED=true
+                  echo "🔄 Rebuild буде виконано після перевірки всіх locations"
                 fi
               else
                 echo "✅ api2oss не знайдено в downloaded packages"
@@ -578,6 +593,9 @@ jobs:
                     
                     if [ "$PKG_OLD_AFTER" -eq 0 ]; then
                       echo "✅ Пропатчено успішно - api2oss відсутній"
+                      # КРИТИЧНО: Помічаємо що потрібен rebuild (не перезаписується в loop!)
+                      REBUILD_NEEDED=true
+                      echo "🔄 Rebuild буде виконано після перевірки всіх system directories"
                     else
                       echo "⚠️  В packages все ще є $PKG_OLD_AFTER входжень api2oss"
                       grep -r "api2oss" "$SOURCE_PACKAGES" --include="*.swift" --include="*.m" --include="*.h" 2>/dev/null | head -10 || true
@@ -591,11 +609,11 @@ jobs:
           echo ""
           echo "✅ Патч downloaded packages завершено"
           
-          # Якщо знайшли та пропатчили packages - треба rebuild app!
-          if [ -n "$PKG_OLD_COUNT" ] && [ "$PKG_OLD_COUNT" -gt 0 ] && [ -n "$PKG_OLD_AFTER" ] && [ "$PKG_OLD_AFTER" -eq 0 ]; then
+          # КРИТИЧНО: Rebuild якщо БУДЬ-ЯКА location була пропатчена (не залежить від loop variables!)
+          if [ "$REBUILD_NEEDED" = true ]; then
             echo ""
             echo "=== REBUILD: Перебудовуємо app з пропатченими packages ==="
-            echo "КРИТИЧНО: Packages були пропатчені - app треба зібрати заново!"
+            echo "КРИТИЧНО: Packages були пропатчені в одному або кількох locations - app треба зібрати заново!"
             echo ""
             
             # Очищаємо app bundle щоб force rebuild
@@ -605,6 +623,8 @@ jobs:
             echo "Починаємо rebuild..."
             bash ../scripts/ios/build-app.sh
             echo "✅ Rebuild завершено з пропатченими packages"
+          else
+            echo "ℹ️  Rebuild не потрібен - api2oss не знайдено або вже відсутній в packages"
           fi
 
       - name: Перевірка app bundle
