@@ -261,9 +261,45 @@ jobs:
               PODS_OLD_AFTER=$(grep -r "api2oss" Pods/ --include="*.swift" --include="*.m" --include="*.h" --include="*.strings" --include="*.plist" 2>/dev/null | wc -l | tr -d ' ')
               echo "Після патчу залишилось: $PODS_OLD_AFTER входжень api2oss"
               
-              if [ "$PODS_OLD_AFTER" -gt 0 ]; then
-                echo "⚠️  УВАГА: В Pods все ще є api2oss:"
-                grep -r "api2oss" Pods/ --include="*.swift" --include="*.m" --include="*.h" 2>/dev/null | head -5 || true
+                if [ "$PODS_OLD_AFTER" -gt 0 ]; then
+                echo "❌ КРИТИЧНА ПОМИЛКА: Патч Pods не повністю спрацював!"
+                echo ""
+                echo "В Pods все ще є api2oss:"
+                grep -r "api2oss" Pods/ --include="*.swift" --include="*.m" --include="*.h" 2>/dev/null | head -10 || true
+                echo ""
+                echo "Спроба 2: Видаляємо Pods та переінсталюємо..."
+                rm -rf Pods Podfile.lock
+                pod install --repo-update || pod install
+                
+                echo "Повторний патч Pods..."
+                find Pods/ \( -name "*.swift" -o -name "*.m" -o -name "*.h" -o -name "*.strings" -o -name "*.plist" -o -name "*.json" \) \
+                  -type f \
+                  -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} + \
+                  -exec sed -i '' 's/"api2oss"/"api2s"/g' {} + \
+                  -exec sed -i '' "s/'api2oss'/'api2s'/g" {} + \
+                  -exec sed -i '' 's/@"api2oss"/@"api2s"/g' {} + 2>/dev/null || true
+                
+                # Фінальна перевірка
+                PODS_OLD_FINAL=$(grep -r "api2oss" Pods/ --include="*.swift" --include="*.m" --include="*.h" --include="*.strings" --include="*.plist" 2>/dev/null | wc -l | tr -d ' ')
+                echo "Після повторного патчу залишилось: $PODS_OLD_FINAL входжень"
+                
+                if [ "$PODS_OLD_FINAL" -gt 0 ]; then
+                  echo ""
+                  echo "❌ FAIL: Не вдалося пропатчити Pods навіть після переінсталяції!"
+                  echo ""
+                  echo "Можливі причини:"
+                  echo "1. Pods містить api2oss в бінарних файлах"
+                  echo "2. Pods містить api2oss в файлах які ми не патчимо"
+                  echo "3. sed не працює для деяких файлів"
+                  echo ""
+                  echo "Залишилось api2oss в:"
+                  grep -r "api2oss" Pods/ 2>/dev/null | head -10 || true
+                  echo ""
+                  echo "Зупиняємо workflow - неможливо зібрати app з правильним API"
+                  exit 1
+                fi
+                
+                echo "✅ Pods успішно пропатчено після переінсталяції"
               else
                 echo "✅ Pods повністю пропатчено - api2oss відсутній"
               fi
@@ -296,8 +332,27 @@ jobs:
             echo "ℹ️  Build директорія не існує, пропускаємо"
           fi
           
-          # НЕ чіпаємо Pods - вони вже пропатчені в попередньому кроці!
-          echo "ℹ️  Pods залишаємо (вже пропатчені в попередньому кроці)"
+          # Перевіряємо Pods перед збіркою
+          if [ -d "Pods" ]; then
+            # Фінальна верифікація що Pods не містять api2oss
+            PODS_CHECK=$(grep -r "api2oss" Pods/ 2>/dev/null | wc -l | tr -d ' ')
+            if [ "$PODS_CHECK" -gt 0 ]; then
+              echo "❌ КРИТИЧНА ПОМИЛКА: Pods все ще містять api2oss перед збіркою!"
+              echo "Це не повинно статись - патч має бути виконаний в попередньому кроці"
+              echo ""
+              echo "Видаляємо Pods та зупиняємо workflow..."
+              rm -rf Pods Podfile.lock
+              exit 1
+            else
+              echo "✅ Pods перевірено - api2oss відсутній, залишаємо для збірки"
+            fi
+          else
+            echo "⚠️  УВАГА: Pods не існує перед збіркою - це може спричинити помилку build"
+            echo "Можливо попередній крок failed. Спробуємо встановити Pods..."
+            if [ -f "Podfile" ]; then
+              pod install || echo "Failed to install Pods"
+            fi
+          fi
           
           # Xcode clean
           echo "Виконуємо xcodebuild clean..."
