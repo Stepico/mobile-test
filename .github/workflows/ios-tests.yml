@@ -438,17 +438,17 @@ jobs:
               echo "✅ Pods перевірено - api2oss відсутній, залишаємо для збірки"
             fi
           else
-            echo "❌ КРИТИЧНА ПОМИЛКА: Pods не існує перед збіркою!"
-            echo "Це не повинно статись - Pods мають бути встановлені в попередньому кроці"
-            echo ""
-            echo "Спробуємо встановити Pods як останню спробу..."
+            # Pods не існує - перевіряємо чи це CocoaPods або SPM project
             if [ -f "Podfile" ]; then
+              echo "⚠️  Pods не існує але Podfile знайдено!"
+              echo "Спробуємо встановити Pods як останню спробу..."
+              
               pod install --repo-update || pod install
               
               # Перевірка що встановлення успішне
               if [ ! -d "Pods" ]; then
                 echo ""
-                echo "❌ FAIL: pod install failed - Pods директорія не створена!"
+                echo "❌ КРИТИЧНА ПОМИЛКА: pod install failed - Pods директорія не створена!"
                 echo "Неможливо продовжити build без dependencies"
                 exit 1
               fi
@@ -470,7 +470,7 @@ jobs:
               
               if [ "$PODS_FALLBACK_CHECK" -gt 0 ]; then
                 echo ""
-                echo "❌ FAIL: Не вдалося пропатчити Pods!"
+                echo "❌ КРИТИЧНА ПОМИЛКА: Не вдалося пропатчити Pods!"
                 echo "Знайдено $PODS_FALLBACK_CHECK входжень api2oss:"
                 grep -r "api2oss" Pods/ 2>/dev/null | head -10 || true
                 echo ""
@@ -480,9 +480,9 @@ jobs:
               
               echo "✅ Pods пропатчено - api2oss відсутній"
             else
-              echo "❌ FAIL: Podfile не знайдено!"
-              echo "Неможливо встановити Pods"
-              exit 1
+              echo "ℹ️  Pods і Podfile не знайдено - це Swift Package Manager project"
+              echo "Dependencies будуть downloaded під час build через SPM"
+              echo "Продовжуємо збірку..."
             fi
           fi
           
