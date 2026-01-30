@@ -378,6 +378,31 @@ jobs:
               fi
               
               echo "✅ Pods встановлено успішно"
+              echo ""
+              echo "⚠️  ВАЖЛИВО: Застосовуємо API URL патч до щойно встановлених Pods..."
+              
+              # Патчимо Pods (той самий код що в КРОК 5 вище)
+              find Pods/ \( -name "*.swift" -o -name "*.m" -o -name "*.h" -o -name "*.strings" -o -name "*.plist" -o -name "*.json" \) \
+                -type f \
+                -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} + \
+                -exec sed -i '' 's/"api2oss"/"api2s"/g' {} + \
+                -exec sed -i '' "s/'api2oss'/'api2s'/g" {} + \
+                -exec sed -i '' 's/@"api2oss"/@"api2s"/g' {} + 2>/dev/null || true
+              
+              # Перевірка патчу
+              PODS_FALLBACK_CHECK=$(grep -r "api2oss" Pods/ 2>/dev/null | wc -l | tr -d ' ')
+              
+              if [ "$PODS_FALLBACK_CHECK" -gt 0 ]; then
+                echo ""
+                echo "❌ FAIL: Не вдалося пропатчити Pods!"
+                echo "Знайдено $PODS_FALLBACK_CHECK входжень api2oss:"
+                grep -r "api2oss" Pods/ 2>/dev/null | head -10 || true
+                echo ""
+                echo "Неможливо продовжити build з непропатченими Pods"
+                exit 1
+              fi
+              
+              echo "✅ Pods пропатчено - api2oss відсутній"
             else
               echo "❌ FAIL: Podfile не знайдено!"
               echo "Неможливо встановити Pods"
