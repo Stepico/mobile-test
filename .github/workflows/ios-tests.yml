@@ -210,6 +210,124 @@ jobs:
           
           echo "✅ Build кеш очищено - app зберется з нуля з правильним API URL"
 
+      - name: Resolve та патч Swift Package Dependencies
+        run: |
+          cd ios-diia
+          
+          echo "=== КРОК 1: Resolve SPM dependencies ==="
+          # Resolve packages (download from GitHub)
+          xcodebuild -resolvePackageDependencies \
+            -workspace DiiaOpenSource.xcworkspace \
+            -scheme DiiaOpenSource \
+            -configuration Debug 2>&1 | tee /tmp/resolve.log || {
+              echo "❌ Package resolve failed"
+              tail -50 /tmp/resolve.log
+              exit 1
+            }
+          
+          echo "✅ SPM dependencies resolved"
+          echo ""
+          
+          echo "=== КРОК 2: Пошук downloaded SPM packages ==="
+          # Пошук в build директорії (isolated DerivedData)
+          BUILD_DIR="../ios-build/DerivedData"
+          SPM_CHECKOUTS="$BUILD_DIR/SourcePackages/checkouts"
+          
+          if [ ! -d "$SPM_CHECKOUTS" ]; then
+            echo "⚠️  SPM checkouts не знайдено в $SPM_CHECKOUTS"
+            echo "Перевіряємо system DerivedData..."
+            
+            # Fallback: system DerivedData
+            SYSTEM_DD=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "SourcePackages" -maxdepth 2 2>/dev/null | head -1 || echo "")
+            if [ -n "$SYSTEM_DD" ]; then
+              SPM_CHECKOUTS="$SYSTEM_DD/checkouts"
+              echo "✅ Знайдено в system DerivedData: $SPM_CHECKOUTS"
+            else
+              echo "❌ SPM packages не знайдено ніде - можливо немає SPM dependencies"
+              echo "Пропускаємо патч SPM"
+              exit 0
+            fi
+          else
+            echo "✅ SPM packages знайдено: $SPM_CHECKOUTS"
+          fi
+          
+          echo ""
+          echo "=== КРОК 3: Патч api2oss → api2s в SPM packages ==="
+          
+          # Підрахунок api2oss ПЕРЕД патчем
+          PKG_OLD_COUNT=$(grep -r "api2oss" "$SPM_CHECKOUTS" \
+            --include="*.swift" \
+            --include="*.m" \
+            --include="*.h" \
+            --include="*.xcconfig" \
+            2>/dev/null | wc -l | tr -d ' ' || echo "0")
+          
+          echo "Знайдено $PKG_OLD_COUNT входжень api2oss в SPM packages"
+          
+          if [ "$PKG_OLD_COUNT" -eq 0 ]; then
+            echo "✅ SPM packages вже чисті - api2oss відсутній"
+            exit 0
+          fi
+          
+          echo "Приклади файлів з api2oss:"
+          grep -rl "api2oss" "$SPM_CHECKOUTS" \
+            --include="*.swift" \
+            --include="*.m" \
+            --include="*.h" \
+            2>/dev/null | head -5 || true
+          echo ""
+          
+          # Патчимо SPM packages
+          echo "Патчимо всі форми api2oss..."
+          find "$SPM_CHECKOUTS" \
+            \( -name "*.swift" -o -name "*.m" -o -name "*.h" -o -name "*.xcconfig" \) \
+            -type f \
+            -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} + \
+            -exec sed -i '' 's/"api2oss"/"api2s"/g' {} + \
+            -exec sed -i '' "s/'api2oss'/'api2s'/g" {} + 2>/dev/null || true
+          
+          echo "✅ Патч застосовано до SPM packages"
+          echo ""
+          
+          # Verification AFTER patching
+          echo "=== КРОК 4: Верифікація патчу SPM packages ==="
+          PKG_OLD_AFTER=$(grep -r "api2oss" "$SPM_CHECKOUTS" \
+            --include="*.swift" \
+            --include="*.m" \
+            --include="*.h" \
+            --include="*.xcconfig" \
+            2>/dev/null | wc -l | tr -d ' ' || echo "0")
+          
+          if [ "$PKG_OLD_AFTER" -gt 0 ]; then
+            echo "❌ КРИТИЧНА ПОМИЛКА: api2oss залишився в SPM packages після патчу!"
+            echo "Залишилось $PKG_OLD_AFTER входжень:"
+            grep -r "api2oss" "$SPM_CHECKOUTS" \
+              --include="*.swift" \
+              --include="*.m" \
+              --include="*.h" \
+              2>/dev/null | head -10 || true
+            echo ""
+            echo "App зберется з НЕПРАВИЛЬНИМ API URL!"
+            exit 1
+          fi
+          
+          echo "✅ SPM packages повністю пропатчено - api2oss відсутній"
+          echo ""
+          
+          # Показуємо приклади нового URL
+          PKG_NEW_COUNT=$(grep -r "api2s" "$SPM_CHECKOUTS" \
+            --include="*.swift" \
+            --include="*.m" \
+            --include="*.h" \
+            2>/dev/null | wc -l | tr -d ' ' || echo "0")
+          echo "✅ Знайдено $PKG_NEW_COUNT входжень api2s в SPM packages"
+          if [ "$PKG_NEW_COUNT" -gt 0 ]; then
+            echo "Приклади (перші 3):"
+            grep -r "api2s" "$SPM_CHECKOUTS" \
+              --include="*.swift" \
+              2>/dev/null | head -3 || true
+          fi
+
       - name: Збірка iOS додатку для Simulator
         id: build-app
         run: |
@@ -294,7 +412,10 @@ jobs:
             echo "Старий URL (api2oss):"
             if strings "$APP_BINARY" | grep -i "api2oss\.diia\.gov\.ua" | head -3; then
               echo "❌ КРИТИЧНА ПОМИЛКА: СТАРИЙ URL знайдено в binary!"
-              echo "Це означає що app зібрався з неправильним конфігом"
+              echo "Це означає що app зібрався з неправильним конфігом або SPM dependencies не пропатчені"
+              echo ""
+              echo "РІШЕННЯ: Перевірте що крок 'Resolve та патч Swift Package Dependencies' спрацював правильно"
+              exit 1
             else
               echo "✅ Старий URL НЕ знайдено в binary"
             fi
@@ -306,6 +427,7 @@ jobs:
             else
               echo "❌ КРИТИЧНА ПОМИЛКА: НОВИЙ URL НЕ знайдено в binary!"
               echo "Це означає що патч НЕ СПРАЦЮВАВ або app зібрався з кешу"
+              exit 1
             fi
           fi
           
