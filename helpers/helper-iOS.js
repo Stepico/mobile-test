@@ -434,30 +434,47 @@ async function ensureOnMainScreen(timeout = 30000) {
  */
 async function ensureOnPinLoginScreen(timeout = 20000) {
     return withLog('ensureOnPinLoginScreen', '', async () => {
+        // Wait for loading first
+        await waitForLoadingToComplete(timeout);
+        
         const currentState = await detectScreen();
+        logStep('ensureOnPinLoginScreen', `Current state: ${currentState}`);
         
         if (currentState === SCREEN_STATE.PIN_LOGIN) {
+            logStep('ensureOnPinLoginScreen', 'Already on PIN_LOGIN screen');
             return;
         }
 
         // If on main screen, restart to get to login
         if (currentState === SCREEN_STATE.MAIN) {
+            logStep('ensureOnPinLoginScreen', 'On MAIN, restarting to get to PIN_LOGIN');
             await restart();
+            await waitForLoadingToComplete(timeout);
         }
 
         // If on auth screen, user needs to authorize first
         if (currentState === SCREEN_STATE.AUTH) {
             throw new Error('ensureOnPinLoginScreen: On auth screen. User needs to authorize first.');
         }
+        
+        // If on PIN create/confirm, restart
+        if (currentState === SCREEN_STATE.PIN_CREATE || currentState === SCREEN_STATE.PIN_CONFIRM) {
+            logStep('ensureOnPinLoginScreen', 'On PIN_CREATE/CONFIRM, restarting');
+            await restart();
+            await waitForLoadingToComplete(timeout);
+        }
 
         // Wait for PIN login screen
+        logStep('ensureOnPinLoginScreen', 'Waiting for PIN_LOGIN screen to appear');
         await driver.waitUntil(
             async () => {
                 const state = await detectScreen();
+                logStep('ensureOnPinLoginScreen', `Checking state: ${state}`);
                 return state === SCREEN_STATE.PIN_LOGIN;
             },
             { timeout, timeoutMsg: `PIN login screen did not appear after ${timeout}ms` }
         );
+        logStep('ensureOnPinLoginScreen', 'Successfully on PIN_LOGIN screen');
     });
 }
 
@@ -702,21 +719,34 @@ async function setupTestState(targetState, options = {}) {
         switch (targetState) {
             case SCREEN_STATE.AUTH:
                 // Need to get to auth screen
+                logStep('setupTestState', 'Setting up AUTH state');
+                
                 if (currentState === SCREEN_STATE.MAIN) {
+                    logStep('setupTestState', 'Currently on MAIN, signing out');
                     const menuBtn = getMenuButton();
                     const isMenuVisible = await menuBtn.isDisplayed().catch(() => false);
                     if (isMenuVisible) {
                         await signOut();
+                        await waitForLoadingToComplete(timeout);
                     } else {
+                        logStep('setupTestState', 'Menu not visible, restarting');
                         await restart();
+                        await waitForLoadingToComplete(timeout);
                         await ensureState(SCREEN_STATE.AUTH, { timeout });
                     }
                 } else if (currentState === SCREEN_STATE.PIN_LOGIN) {
+                    logStep('setupTestState', 'Currently on PIN_LOGIN, using forgot code');
                     await forgotCode();
+                    await waitForLoadingToComplete(timeout);
                     await ensureState(SCREEN_STATE.AUTH, { timeout });
+                } else if (currentState === SCREEN_STATE.AUTH) {
+                    logStep('setupTestState', 'Already on AUTH');
                 } else {
+                    logStep('setupTestState', 'Unknown state, ensuring AUTH');
                     await ensureState(SCREEN_STATE.AUTH, { timeout });
+                    await waitForLoadingToComplete(timeout);
                 }
+                logStep('setupTestState', 'Successfully set up AUTH state');
                 break;
 
             case SCREEN_STATE.PIN_LOGIN:
@@ -725,56 +755,91 @@ async function setupTestState(targetState, options = {}) {
                     throw new Error('setupTestState: pinCode is required for PIN_LOGIN state');
                 }
                 
+                logStep('setupTestState', `Setting up PIN_LOGIN state with PIN: ${pinCode}`);
+                
                 // Always ensure user is authorized with the correct PIN first
                 // This guarantees the PIN is set correctly before restarting
                 if (currentState === SCREEN_STATE.AUTH) {
+                    logStep('setupTestState', 'Currently on AUTH, authorizing with correct PIN');
                     await authorize(pinCode);
                     await assertGreeting();
+                    await driver.pause(500);
                 } else if (currentState === SCREEN_STATE.MAIN) {
+                    logStep('setupTestState', 'Currently on MAIN, need to set correct PIN');
                     // Sign out first, then authorize with correct PIN
                     const menuBtn = getMenuButton();
                     const isMenuVisible = await menuBtn.isDisplayed().catch(() => false);
                     if (isMenuVisible) {
+                        logStep('setupTestState', 'Menu visible, signing out');
                         await signOut();
+                        await waitForLoadingToComplete(timeout);
                         await ensureState(SCREEN_STATE.AUTH, { timeout });
                         await authorize(pinCode);
                         await assertGreeting();
+                        await driver.pause(500);
                     } else {
                         // Menu not visible - restart and authorize
+                        logStep('setupTestState', 'Menu not visible, restarting');
                         await restart();
+                        await waitForLoadingToComplete(timeout);
                         await ensureState(SCREEN_STATE.AUTH, { timeout });
                         await authorize(pinCode);
                         await assertGreeting();
+                        await driver.pause(500);
                     }
                 } else if (currentState === SCREEN_STATE.PIN_LOGIN) {
+                    logStep('setupTestState', 'Already on PIN_LOGIN, verifying correct PIN by reauthorizing');
                     // Already on PIN login - we can't verify PIN without trying to login
-                    // So we'll restart and ensure correct PIN is set
+                    // Always restart and reauthorize to ensure correct PIN is set
                     await restart();
+                    await waitForLoadingToComplete(timeout);
                     await driver.pause(1000);
                     const newState = await detectScreen();
                     if (newState === SCREEN_STATE.AUTH) {
+                        logStep('setupTestState', 'After restart on AUTH, authorizing');
                         await authorize(pinCode);
                         await assertGreeting();
-                        await driver.pause(1000);
-                    } else if (newState !== SCREEN_STATE.PIN_LOGIN) {
+                        await driver.pause(500);
+                    } else if (newState === SCREEN_STATE.PIN_LOGIN) {
+                        // Still on PIN login - try to login to verify PIN, if fails then reauthorize
+                        logStep('setupTestState', 'After restart still on PIN_LOGIN, attempting login to verify PIN');
+                        try {
+                            await login(pinCode);
+                            await assertGreeting();
+                            await driver.pause(500);
+                            // Login successful, PIN is correct
+                            logStep('setupTestState', 'Login successful, PIN is correct');
+                        } catch (loginError) {
+                            // Login failed - wrong PIN, need to reauthorize
+                            logStep('setupTestState', 'Login failed, reauthorizing with correct PIN');
+                            await forgotCode();
+                            await waitForLoadingToComplete(timeout);
+                            await authorize(pinCode);
+                            await assertGreeting();
+                            await driver.pause(500);
+                        }
+                    } else {
+                        logStep('setupTestState', 'After restart on unknown state, ensuring AUTH');
                         await ensureState(SCREEN_STATE.AUTH, { timeout });
                         await authorize(pinCode);
                         await assertGreeting();
-                    } else {
-                        // Already on PIN login after restart - assume correct state
-                        return;
+                        await driver.pause(500);
                     }
                 } else {
                     // Unknown state - authorize first
+                    logStep('setupTestState', 'Unknown state, ensuring AUTH and authorizing');
                     await ensureState(SCREEN_STATE.AUTH, { timeout });
                     await authorize(pinCode);
                     await assertGreeting();
-                    await driver.pause(1000);
+                    await driver.pause(500);
                 }
                 
                 // Now restart to get to PIN login screen
+                logStep('setupTestState', 'Restarting to get to PIN_LOGIN screen');
                 await restart();
+                await waitForLoadingToComplete(timeout);
                 await ensureState(SCREEN_STATE.PIN_LOGIN, { timeout });
+                logStep('setupTestState', 'Successfully set up PIN_LOGIN state');
                 break;
 
             case SCREEN_STATE.MAIN:
@@ -783,46 +848,78 @@ async function setupTestState(targetState, options = {}) {
                     throw new Error('setupTestState: pinCode is required for MAIN state');
                 }
                 
-                // Always ensure we're logged in with correct PIN by restarting and logging in
-                // This guarantees correct state regardless of current state
+                logStep('setupTestState', `Setting up MAIN state with PIN: ${pinCode}`);
+                
+                // Always ensure we're logged in with correct PIN
                 if (currentState === SCREEN_STATE.AUTH) {
+                    logStep('setupTestState', 'Currently on AUTH, authorizing');
                     await authorize(pinCode);
                     await assertGreeting();
+                    await driver.pause(300);
                 } else if (currentState === SCREEN_STATE.PIN_LOGIN) {
+                    logStep('setupTestState', 'Currently on PIN_LOGIN, logging in');
                     await login(pinCode);
                     await assertGreeting();
+                    await driver.pause(300);
                 } else if (currentState === SCREEN_STATE.MAIN) {
+                    logStep('setupTestState', 'Already on MAIN, verifying menu is accessible');
                     // Verify menu is visible - if not, need to login
                     const menuBtn = getMenuButton();
                     const isMenuVisible = await menuBtn.isDisplayed().catch(() => false);
                     if (!isMenuVisible) {
-                        // Not really on main - need to login
-                        await ensureState(SCREEN_STATE.PIN_LOGIN, { timeout });
-                        await login(pinCode);
-                        await assertGreeting();
+                        // Not really on main - need to restart and login
+                        logStep('setupTestState', 'Menu not visible, restarting and logging in');
+                        await restart();
+                        await waitForLoadingToComplete(timeout);
+                        const newState = await detectScreen();
+                        if (newState === SCREEN_STATE.PIN_LOGIN) {
+                            await login(pinCode);
+                            await assertGreeting();
+                            await driver.pause(300);
+                        } else if (newState === SCREEN_STATE.AUTH) {
+                            await authorize(pinCode);
+                            await assertGreeting();
+                            await driver.pause(300);
+                        } else {
+                            await ensureState(SCREEN_STATE.PIN_LOGIN, { timeout });
+                            await login(pinCode);
+                            await assertGreeting();
+                            await driver.pause(300);
+                        }
                     } else {
-                        // Menu visible - verify we can interact with it
-                        // Wait a bit for UI to stabilize
+                        // Menu visible - already on MAIN with correct state
+                        logStep('setupTestState', 'Menu visible, already on MAIN');
                         await driver.pause(300);
                     }
                 } else {
                     // Unknown - restart and login
+                    logStep('setupTestState', 'Unknown state, restarting');
                     await restart();
+                    await waitForLoadingToComplete(timeout);
                     const newState = await detectScreen();
                     if (newState === SCREEN_STATE.PIN_LOGIN) {
+                        logStep('setupTestState', 'After restart on PIN_LOGIN, logging in');
                         await login(pinCode);
                         await assertGreeting();
+                        await driver.pause(300);
                     } else if (newState === SCREEN_STATE.AUTH) {
+                        logStep('setupTestState', 'After restart on AUTH, authorizing');
                         await authorize(pinCode);
                         await assertGreeting();
-                        await driver.pause(1000);
+                        await driver.pause(300);
+                    } else if (newState === SCREEN_STATE.MAIN) {
+                        logStep('setupTestState', 'After restart already on MAIN');
+                        await driver.pause(300);
                     } else {
                         // Still unknown - try to get to PIN login
+                        logStep('setupTestState', 'Still unknown, ensuring PIN_LOGIN');
                         await ensureState(SCREEN_STATE.PIN_LOGIN, { timeout });
                         await login(pinCode);
                         await assertGreeting();
+                        await driver.pause(300);
                     }
                 }
+                logStep('setupTestState', 'Successfully set up MAIN state');
                 break;
 
             default:
@@ -1306,16 +1403,33 @@ async function login(codeDigit) {
         // Wait for loading to complete first
         await waitForLoadingToComplete(15000);
         
+        // Small stabilization delay
+        await driver.pause(500);
+        
         // Ensure we are on PIN login screen
         await ensureOnPinLoginScreen(15000);
-
-        // Verify we're on login screen (not create/confirm)
-        const currentState = await detectScreen();
-        if (currentState !== SCREEN_STATE.PIN_LOGIN) {
-            throw new Error(`login: Expected PIN_LOGIN screen, but detected ${currentState}`);
+        
+        // Additional verification with retry
+        let retries = 3;
+        let currentState = await detectScreen();
+        while (currentState !== SCREEN_STATE.PIN_LOGIN && retries > 0) {
+            logStep('login', `Not on PIN_LOGIN (detected: ${currentState}), retrying... (${retries} attempts left)`);
+            await driver.pause(1000);
+            await waitForLoadingToComplete(10000);
+            currentState = await detectScreen();
+            retries--;
         }
 
+        // Verify we're on login screen (not create/confirm)
+        if (currentState !== SCREEN_STATE.PIN_LOGIN) {
+            throw new Error(`login: Expected PIN_LOGIN screen, but detected ${currentState} after retries`);
+        }
+        
+        logStep('login', 'Confirmed on PIN_LOGIN screen, entering PIN code');
         await enterPinCode(codeDigit);
+        
+        // Wait for login to process
+        await driver.pause(500);
     });
 }
 

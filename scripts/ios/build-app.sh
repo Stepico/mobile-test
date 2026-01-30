@@ -135,12 +135,32 @@ echo "Output: $ABS_OUTPUT_DIR"
 # Build для simulator
 cd "$ABS_SOURCE_DIR"
 
+# Визначаємо destination для детермінованого build
+DEVICE_NAME="${IOS_DEVICE_NAME:-iPhone 16 Pro}"
+PLATFORM_VERSION="${IOS_PLATFORM_VERSION:-18.2}"
+
+# Перевірка що runtime існує
+echo "Перевірка iOS $PLATFORM_VERSION runtime..."
+RUNTIME_AVAILABLE=$(xcrun simctl list runtimes available 2>/dev/null | grep -i "iOS $PLATFORM_VERSION" || echo "")
+if [ -z "$RUNTIME_AVAILABLE" ]; then
+    echo "⚠️  iOS $PLATFORM_VERSION runtime not found, using latest available"
+    # Fallback: use latest iOS runtime
+    PLATFORM_VERSION=$(xcrun simctl list runtimes available 2>/dev/null | grep -i "iOS" | tail -1 | grep -oE "[0-9]+\.[0-9]+" | head -1 || echo "18.2")
+    echo "Using iOS $PLATFORM_VERSION"
+fi
+
+# Формуємо destination (детермінований)
+DESTINATION="platform=iOS Simulator,name=${DEVICE_NAME},OS=${PLATFORM_VERSION}"
+echo "Build destination: $DESTINATION"
+echo ""
+
 if [ "$BUILD_TYPE" = "workspace" ]; then
     xcodebuild \
         -workspace "$BUILD_PATH" \
         -scheme "$SCHEME" \
         -configuration Debug \
         -sdk iphonesimulator \
+        -destination "$DESTINATION" \
         -derivedDataPath "$ABS_BUILD_DIR/DerivedData" \
         clean build \
         2>&1 | tee "$ABS_BUILD_DIR/xcodebuild.log" || {
@@ -155,6 +175,7 @@ else
         -scheme "$SCHEME" \
         -configuration Debug \
         -sdk iphonesimulator \
+        -destination "$DESTINATION" \
         -derivedDataPath "$ABS_BUILD_DIR/DerivedData" \
         clean build \
         2>&1 | tee "$ABS_BUILD_DIR/xcodebuild.log" || {

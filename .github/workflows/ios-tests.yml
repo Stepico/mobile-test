@@ -1,887 +1,388 @@
 name: iOS App Tests
 
+# ============================================================================
+# Concurrency: Запобігає паралельним runs для того ж PR/branch
+# ============================================================================
+concurrency:
+  group: ios-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+# ============================================================================
+# Triggers
+# ============================================================================
 on:
-  # Ручний запуск workflow через GitHub UI
   workflow_dispatch:
     inputs:
       ios_version:
-        description: 'iOS версія для тестування (за замовчуванням 18.5)'
+        description: 'iOS версія (default: 18.5)'
         required: false
         default: '18.5'
         type: string
       device_name:
-        description: 'Назва пристрою (за замовчуванням iPhone 16 Pro)'
+        description: 'Device name (default: iPhone 16 Pro)'
         required: false
         default: 'iPhone 16 Pro'
         type: string
       ios_app_tag:
-        description: 'iOS app тег з github (за замовчуванням 4.20.6)'
+        description: 'iOS app git tag (default: 4.20.6)'
         required: false
         default: '4.20.6'
         type: string
   
-  # Автоматичний запуск при push до main (тільки якщо змінились iOS тести або конфігурація)
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
-      - '.github/workflows/ios-tests.yml'
+      - '.github/workflows/ios-tests*.yml'
       - 'test/specs/iOS/**'
       - 'wdio.ios.conf.js'
       - 'scripts/ios/**'
       - 'helpers/helper-iOS.js'
   
-  # Автоматичний запуск при PR
   pull_request:
-    branches:
-      - main
+    branches: [main]
     paths:
-      - '.github/workflows/ios-tests.yml'
+      - '.github/workflows/ios-tests*.yml'
       - 'test/specs/iOS/**'
       - 'wdio.ios.conf.js'
       - 'scripts/ios/**'
       - 'helpers/helper-iOS.js'
 
+# ============================================================================
+# Job
+# ============================================================================
 jobs:
   ios-tests:
     name: iOS Tests (${{ inputs.device_name || 'iPhone 16 Pro' }} - iOS ${{ inputs.ios_version || '18.5' }})
     runs-on: macos-latest
-    timeout-minutes: 60  # Збільшено до 60 хв для складних тестів з BankID
+    timeout-minutes: 60
 
+    # Нормалізовані env variables
     env:
-      # Конфігурація iOS app
       IOS_BUNDLE_ID: ua.gov.diia.opensource.app
       IOS_DEVICE_NAME: ${{ inputs.device_name || 'iPhone 16 Pro' }}
       IOS_PLATFORM_VERSION: ${{ inputs.ios_version || '18.5' }}
       IOS_APP_TAG: ${{ inputs.ios_app_tag || '4.20.6' }}
-      
-      # CI environment
       CI: true
       NODE_ENV: test
-      
-      # Appium конфігурація
       APPIUM_LOG_LEVEL: info
 
     steps:
-      # ========================================
+      # ======================================================================
       # КРОК 1: Підготовка середовища
-      # ========================================
+      # ======================================================================
       
-      - name: Checkout тестового репозиторію
+      - name: Checkout тестового репо
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1  # Shallow clone для швидкості
+          fetch-depth: 1
 
-      - name: Налаштування Node.js
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'  # Кешування npm пакетів
+          cache: 'npm'
 
-      - name: Вибір версії Xcode
+      # ======================================================================
+      # Xcode Selection: Детермінований вибір
+      # ======================================================================
+      
+      - name: Select Xcode version
         run: |
-          sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
-          echo "Xcode шлях встановлено"
-
-      - name: Інформація про Xcode та доступні симулятори
-        run: |
-          echo "=== Xcode версія ==="
+          echo "=== Доступні Xcode версії ==="
+          ls -d /Applications/Xcode*.app 2>/dev/null || echo "Тільки default Xcode"
+          echo ""
+          
+          # Пріоритет: Xcode_16.4 > Xcode_16 > Xcode.app
+          if [ -d "/Applications/Xcode_16.4.app" ]; then
+            XCODE_PATH="/Applications/Xcode_16.4.app"
+          elif [ -d "/Applications/Xcode_16.app" ]; then
+            XCODE_PATH="/Applications/Xcode_16.app"
+          else
+            XCODE_PATH="/Applications/Xcode.app"
+          fi
+          
+          echo "Вибрано: $XCODE_PATH"
+          sudo xcode-select --switch "$XCODE_PATH/Contents/Developer"
+          
+          echo "=== Xcode version ==="
           xcodebuild -version
-          echo ""
-          echo "=== Доступні iOS симулятори ==="
-          xcrun simctl list devices available | grep -i "iphone" | head -15
-          echo ""
+          
           echo "=== Доступні iOS runtimes ==="
           xcrun simctl list runtimes available | grep -i "ios"
+          
+          echo "=== Доступні iPhone simulators (top 10) ==="
+          xcrun simctl list devices available | grep -i "iphone" | head -10
 
-      # ========================================
-      # КРОК 2: Встановлення залежностей
-      # ========================================
+      # ======================================================================
+      # КРОК 2: Встановлення залежностей (детермінований)
+      # ======================================================================
 
-      - name: Встановлення npm залежностей
+      - name: Install npm dependencies (npm ci)
         run: |
-          echo "Встановлюємо npm пакети..."
-          # Очищаємо npm cache
-          npm cache clean --force
-          # Видаляємо старий package-lock якщо є проблеми з версіями
-          rm -f package-lock.json
-          npm install
-          echo "npm залежності встановлено"
+          echo "Installing npm dependencies using npm ci (deterministic)..."
+          
+          # Перевірка package-lock.json
+          if [ ! -f "package-lock.json" ]; then
+            echo "❌ package-lock.json not found!"
+            echo "Generating lockfile with npm install..."
+            npm install
+            echo ""
+            echo "⚠️  IMPORTANT: Commit package-lock.json to repository"
+            exit 1
+          fi
+          
+          npm ci
+          echo "✅ npm dependencies installed"
 
-      - name: Кеш Appium
+      # ======================================================================
+      # Appium: Cache + Install
+      # ======================================================================
+
+      - name: Cache Appium
         id: cache-appium
         uses: actions/cache@v4
         with:
           path: |
             ~/.appium
             ~/.npm/_npx
-          key: ${{ runner.os }}-appium-${{ hashFiles('scripts/ios/ensure-appium.sh') }}
+          key: ${{ runner.os }}-appium-2.11.5-xcuitest-7.26.2
           restore-keys: |
             ${{ runner.os }}-appium-
 
-      - name: Встановлення Appium + XCUITest driver
-        run: |
-          echo "Встановлюємо Appium та XCUITest driver..."
-          bash scripts/ios/ensure-appium.sh
-          echo ""
-          echo "Appium готовий до роботи"
+      - name: Install Appium + XCUITest driver
+        run: bash scripts/ios/ensure-appium.sh
 
-      # ========================================
-      # КРОК 3: Збірка iOS додатку
-      # ========================================
+      # ======================================================================
+      # КРОК 3: Збірка iOS app
+      # ======================================================================
 
-      - name: Checkout iOS source репозиторію
+      - name: Checkout iOS source (diia-open-source/ios-diia)
         uses: actions/checkout@v4
         with:
           repository: diia-open-source/ios-diia
-          ref: ${{ env.IOS_APP_TAG }}  # Використовуємо стабільний тег (за замовчуванням 4.20.6)
+          ref: ${{ env.IOS_APP_TAG }}
           path: ios-diia
           fetch-depth: 1
 
-      - name: Виправлення конфігурації та коду
-        run: |
-          cd ios-diia
-          
-          echo "=== Патчимо API URL: api2oss → api2s ==="
-          echo ""
-          
-          # КРОК 1: Патчимо конфігураційні файли
-          echo "КРОК 1: Патчимо конфігураційні файли (.xcconfig, .plist, .json, .xml)..."
-          find . \( -name "*.xcconfig" -o -name "*.plist" -o -name "*.json" -o -name "*.xml" \) \
-            -type f \
-            -not -path "*/\.*" \
-            -not -path "*/Pods/*" \
-            -not -path "*/build/*" \
-            -not -path "*/DerivedData/*" \
-            -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} +
-          echo "✅ Конфігураційні файли пропатчено"
-          
-          # КРОК 2: Патчимо Swift код
-          echo ""
-          echo "КРОК 2: Патчимо Swift код (.swift файли)..."
-          find . -name "*.swift" \
-            -type f \
-            -not -path "*/\.*" \
-            -not -path "*/Pods/*" \
-            -not -path "*/build/*" \
-            -not -path "*/DerivedData/*" \
-            -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} + \
-            -exec sed -i '' 's/"api2oss"/"api2s"/g' {} + \
-            -exec sed -i '' "s/'api2oss'/'api2s'/g" {} +
-          echo "✅ Swift код пропатчено"
-          
-          # КРОК 3: Патчимо Objective-C код
-          echo ""
-          echo "КРОК 3: Патчимо Objective-C код (.m, .h файли)..."
-          find . \( -name "*.m" -o -name "*.h" \) \
-            -type f \
-            -not -path "*/\.*" \
-            -not -path "*/Pods/*" \
-            -not -path "*/build/*" \
-            -not -path "*/DerivedData/*" \
-            -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} + \
-            -exec sed -i '' 's/@"api2oss"/@"api2s"/g' {} +
-          echo "✅ Objective-C код пропатчено"
-          
-          echo ""
-          echo "API URL замінено в всіх знайдених файлах"
-          
-          # Верифікація: перевіряємо чи залишились старі URL
-          echo ""
-          echo "=== Перевірка: шукаємо api2oss (старий URL) ==="
-          OLD_URL_COUNT=$(grep -r "api2oss\.diia\.gov\.ua" . --include="*.xcconfig" --include="*.swift" --include="*.plist" 2>/dev/null | wc -l || echo "0")
-          if [ "$OLD_URL_COUNT" -gt 0 ]; then
-            echo "⚠️  УВАГА: Знайдено $OLD_URL_COUNT входжень старого URL:"
-            grep -r "api2oss\.diia\.gov\.ua" . --include="*.xcconfig" --include="*.swift" --include="*.plist" 2>/dev/null || true
-          else
-            echo "✅ Старих URL не знайдено - патч успішний"
-          fi
-          
-          # Показуємо нові URL для підтвердження
-          echo ""
-          echo "=== Перевірка: шукаємо api2s (новий URL) ==="
-          NEW_URL_COUNT=$(grep -r "api2s\.diia\.gov\.ua" . --include="*.xcconfig" --include="*.swift" --include="*.plist" 2>/dev/null | wc -l || echo "0")
-          echo "✅ Знайдено $NEW_URL_COUNT входжень нового URL"
-          if [ "$NEW_URL_COUNT" -gt 0 ]; then
-            echo "Приклади:"
-            grep -r "api2s\.diia\.gov\.ua" . --include="*.xcconfig" --include="*.swift" --include="*.plist" 2>/dev/null | head -5 || true
-          fi
-          
-          echo ""
-          echo "=== Патч AppConfigurator.swift ==="
-          # Виправлення AppConfigurator.swift (якщо є помилка imageNameProvider)
-          if [ -f "DiiaOpenSource/AppConfigurator.swift" ]; then
-            # Видаляємо параметр imageNameProvider якщо він є
-            sed -i '' 's/, imageNameProvider: [^)]*//g' DiiaOpenSource/AppConfigurator.swift
-            sed -i '' 's/imageNameProvider: [^,)]*,\?//g' DiiaOpenSource/AppConfigurator.swift
-            echo "✅ AppConfigurator.swift пропатчено"
-          else
-            echo "⚠️  AppConfigurator.swift не знайдено"
-          fi
-          
-          echo ""
-          echo "=== КРОК 4: Re-install Pods з пропатченими конфігами ==="
-          # Pods може містити хардкоджений api2oss, переінсталюємо після патчу
-          if [ -f "Podfile" ]; then
-            echo "Знайдено Podfile, переінсталюємо Pods..."
-            # Встановлюємо CocoaPods якщо потрібно
-            if ! command -v pod &> /dev/null; then
-              echo "Встановлюємо CocoaPods..."
-              sudo gem install cocoapods -v 1.15.2 --no-document
-            fi
-            
-            # Видаляємо старі Pods
-            rm -rf Pods Podfile.lock
-            
-            # Встановлюємо Pods з нуля
-            pod install --repo-update || pod install
-            echo "✅ Pods переінстальовано"
-            
-            echo ""
-            echo "=== КРОК 5: Патчимо встановлені Pods ==="
-            echo "КРИТИЧНО: Pods може містити хардкоджений api2oss - патчимо!"
-            
-            if [ -d "Pods" ]; then
-              # Патчимо всі файли в Pods директорії
-              echo "Шукаємо та патчимо api2oss в Pods..."
-              
-              # Показуємо скільки знайдено перед патчем
-              PODS_OLD_COUNT=$(grep -r "api2oss" Pods/ --include="*.swift" --include="*.m" --include="*.h" --include="*.strings" --include="*.plist" --include="*.json" 2>/dev/null | wc -l | tr -d ' ')
-              echo "Знайдено $PODS_OLD_COUNT входжень api2oss в Pods"
-              
-              # Патчимо
-              find Pods/ \( -name "*.swift" -o -name "*.m" -o -name "*.h" -o -name "*.strings" -o -name "*.plist" -o -name "*.json" \) \
-                -type f \
-                -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} + \
-                -exec sed -i '' 's/"api2oss"/"api2s"/g' {} + \
-                -exec sed -i '' "s/'api2oss'/'api2s'/g" {} + \
-                -exec sed -i '' 's/@"api2oss"/@"api2s"/g' {} + 2>/dev/null || true
-              
-              # Перевірка після патчу
-              PODS_OLD_AFTER=$(grep -r "api2oss" Pods/ --include="*.swift" --include="*.m" --include="*.h" --include="*.strings" --include="*.plist" --include="*.json" 2>/dev/null | wc -l | tr -d ' ')
-              echo "Після патчу залишилось: $PODS_OLD_AFTER входжень api2oss"
-              
-                if [ "$PODS_OLD_AFTER" -gt 0 ]; then
-                echo "❌ КРИТИЧНА ПОМИЛКА: Патч Pods не повністю спрацював!"
-                echo ""
-                echo "В Pods все ще є api2oss:"
-                grep -r "api2oss" Pods/ --include="*.swift" --include="*.m" --include="*.h" 2>/dev/null | head -10 || true
-                echo ""
-                echo "Спроба 2: Видаляємо Pods та переінсталюємо..."
-                rm -rf Pods Podfile.lock
-                pod install --repo-update || pod install
-                
-                # Перевірка що Pods успішно встановлено
-                if [ ! -d "Pods" ]; then
-                  echo ""
-                  echo "❌ КРИТИЧНА ПОМИЛКА: pod install failed - Pods директорія не створена!"
-                  echo ""
-                  echo "Можливі причини:"
-                  echo "1. Podfile невалідний"
-                  echo "2. CocoaPods репозиторії недоступні"
-                  echo "3. Incompatible pod versions"
-                  echo ""
-                  echo "Зупиняємо workflow - неможливо продовжити без Pods"
-                  exit 1
-                fi
-                
-                echo "✅ Pods успішно встановлено, починаємо патч..."
-                echo "Повторний патч Pods..."
-                find Pods/ \( -name "*.swift" -o -name "*.m" -o -name "*.h" -o -name "*.strings" -o -name "*.plist" -o -name "*.json" \) \
-                  -type f \
-                  -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} + \
-                  -exec sed -i '' 's/"api2oss"/"api2s"/g' {} + \
-                  -exec sed -i '' "s/'api2oss'/'api2s'/g" {} + \
-                  -exec sed -i '' 's/@"api2oss"/@"api2s"/g' {} + 2>/dev/null || true
-                
-                # Фінальна перевірка
-                PODS_OLD_FINAL=$(grep -r "api2oss" Pods/ --include="*.swift" --include="*.m" --include="*.h" --include="*.strings" --include="*.plist" --include="*.json" 2>/dev/null | wc -l | tr -d ' ')
-                echo "Після повторного патчу залишилось: $PODS_OLD_FINAL входжень"
-                
-                if [ "$PODS_OLD_FINAL" -gt 0 ]; then
-                  echo ""
-                  echo "❌ FAIL: Не вдалося пропатчити Pods навіть після переінсталяції!"
-                  echo ""
-                  echo "Можливі причини:"
-                  echo "1. Pods містить api2oss в бінарних файлах"
-                  echo "2. Pods містить api2oss в файлах які ми не патчимо"
-                  echo "3. sed не працює для деяких файлів"
-                  echo ""
-                  echo "Залишилось api2oss в:"
-                  grep -r "api2oss" Pods/ 2>/dev/null | head -10 || true
-                  echo ""
-                  echo "Зупиняємо workflow - неможливо зібрати app з правильним API"
-                  exit 1
-                fi
-                
-                echo "✅ Pods успішно пропатчено після переінсталяції"
-              else
-                echo "✅ Pods повністю пропатчено - api2oss відсутній"
-              fi
-            fi
-          else
-            echo "ℹ️  Podfile не знайдено - це може бути Swift Package Manager проект"
-            echo ""
-            echo "=== КРОК 6: Патчимо Swift Package Dependencies ==="
-            echo "КРИТИЧНО: Swift packages може містити хардкоджений api2oss - патчимо!"
-            
-            # Шукаємо директорії де можуть бути downloaded packages
-            PACKAGE_DIRS=(
-              ".build/checkouts"
-              "$HOME/Library/Developer/Xcode/DerivedData/*/SourcePackages/checkouts"
-              "$HOME/Library/Developer/Xcode/DerivedData/SourcePackages/checkouts"
-              "./.build/repositories"
-            )
-            
-            PACKAGES_FOUND=false
-            
-            # КРИТИЧНО: Enable nullglob щоб globs що не match повертали empty (не literal *)
-            shopt -s nullglob
-            
-            for PKG_DIR_PATTERN in "${PACKAGE_DIRS[@]}"; do
-              # Використовуємо glob для знаходження директорій
-              for PKG_DIR in $PKG_DIR_PATTERN; do
-                # Skip якщо glob не expanded (залишився literal * - це fallback на випадок якщо nullglob не працює)
-                [[ "$PKG_DIR" == *"*"* ]] && continue
-                
-                if [ -d "$PKG_DIR" ]; then
-                  echo "✅ Знайдено Swift packages в: $PKG_DIR"
-                  PACKAGES_FOUND=true
-                  
-                  # Показуємо скільки знайдено перед патчем
-                  PKG_OLD_COUNT=$(grep -r "api2oss" "$PKG_DIR" --include="*.swift" --include="*.m" --include="*.h" --include="*.strings" --include="*.plist" --include="*.json" 2>/dev/null | wc -l | tr -d ' ')
-                  echo "Знайдено $PKG_OLD_COUNT входжень api2oss в packages"
-                  
-                  if [ "$PKG_OLD_COUNT" -gt 0 ]; then
-                    echo "Патчимо packages..."
-                    
-                    # Патчимо
-                    find "$PKG_DIR" \( -name "*.swift" -o -name "*.m" -o -name "*.h" -o -name "*.strings" -o -name "*.plist" -o -name "*.json" \) \
-                      -type f \
-                      -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} + \
-                      -exec sed -i '' 's/"api2oss"/"api2s"/g' {} + \
-                      -exec sed -i '' "s/'api2oss'/'api2s'/g" {} + \
-                      -exec sed -i '' 's/@"api2oss"/@"api2s"/g' {} + 2>/dev/null || true
-                    
-                    # Верифікація
-                    PKG_OLD_AFTER=$(grep -r "api2oss" "$PKG_DIR" --include="*.swift" --include="*.m" --include="*.h" --include="*.strings" --include="*.plist" --include="*.json" 2>/dev/null | wc -l | tr -d ' ')
-                    echo "Після патчу залишилось: $PKG_OLD_AFTER входжень"
-                    
-                    if [ "$PKG_OLD_AFTER" -gt 0 ]; then
-                      echo ""
-                      echo "❌ КРИТИЧНА ПОМИЛКА: Не вдалося пропатчити pre-build packages!"
-                      echo "Знайдено $PKG_OLD_AFTER входжень api2oss:"
-                      grep -r "api2oss" "$PKG_DIR" --include="*.swift" --include="*.m" --include="*.h" 2>/dev/null | head -10 || true
-                      echo ""
-                      echo "Можливі причини:"
-                      echo "1. Package містить api2oss в бінарних файлах"
-                      echo "2. Package містить api2oss в файлах які ми не патчимо"
-                      echo "3. sed не працює для деяких файлів"
-                      echo ""
-                      echo "Зупиняємо workflow - неможливо зібрати app з правильним API"
-                      exit 1
-                    else
-                      echo "✅ Packages пропатчено"
-                    fi
-                  else
-                    echo "✅ api2oss не знайдено в packages"
-                  fi
-                fi
-              done
-            done
-            
-            # Disable nullglob після використання
-            shopt -u nullglob
-            
-            if [ "$PACKAGES_FOUND" = false ]; then
-              echo "ℹ️  Swift package checkouts ще не downloaded (це нормально)"
-              echo "Packages будуть downloaded під час build і НЕ міститимуть api2oss якщо source код пропатчено"
-            fi
-          fi
+      # ======================================================================
+      # SPM Cache: Кешуємо Swift Package Manager dependencies
+      # ======================================================================
+      
+      - name: Cache Swift Package Manager
+        uses: actions/cache@v4
+        with:
+          path: |
+            ios-build/DerivedData/SourcePackages
+            ios-diia/.build
+          key: ${{ runner.os }}-spm-${{ hashFiles('ios-diia/**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
 
-      - name: Очищення build кешу для чистої збірки
-        run: |
-          echo "Очищаємо Xcode build кеш для гарантії що app зберется з новим API..."
-          cd ios-diia
-          
-          # Очищаємо DerivedData (там може бути закешений старий конфіг)
-          # ВАЖЛИВО: Тільда (~) НЕ розширюється в лапках, використовуємо $HOME
-          DERIVED_DATA="$HOME/Library/Developer/Xcode/DerivedData"
-          if [ -d "$DERIVED_DATA" ]; then
-            echo "Видаляємо $DERIVED_DATA"
-            rm -rf "$DERIVED_DATA"
-            echo "✅ DerivedData очищено"
-          else
-            echo "ℹ️  DerivedData не існує, пропускаємо"
-          fi
-          
-          # Очищаємо build директорію проекту
-          if [ -d "build" ]; then
-            rm -rf build
-            echo "✅ Build директорія очищена"
-          else
-            echo "ℹ️  Build директорія не існує, пропускаємо"
-          fi
-          
-          # Перевіряємо Pods перед збіркою
-          if [ -d "Pods" ]; then
-            # Фінальна верифікація що Pods не містять api2oss
-            PODS_CHECK=$(grep -r "api2oss" Pods/ --include="*.swift" --include="*.m" --include="*.h" --include="*.strings" --include="*.plist" --include="*.json" 2>/dev/null | wc -l | tr -d ' ')
-            if [ "$PODS_CHECK" -gt 0 ]; then
-              echo "❌ КРИТИЧНА ПОМИЛКА: Pods все ще містять api2oss перед збіркою!"
-              echo "Це не повинно статись - патч має бути виконаний в попередньому кроці"
-              echo ""
-              echo "Видаляємо Pods та зупиняємо workflow..."
-              rm -rf Pods Podfile.lock
-              exit 1
-            else
-              echo "✅ Pods перевірено - api2oss відсутній, залишаємо для збірки"
-            fi
-          else
-            # Pods не існує - перевіряємо чи це CocoaPods або SPM project
-            if [ -f "Podfile" ]; then
-              echo "⚠️  Pods не існує але Podfile знайдено!"
-              echo "Спробуємо встановити Pods як останню спробу..."
-              
-              pod install --repo-update || pod install
-              
-              # Перевірка що встановлення успішне
-              if [ ! -d "Pods" ]; then
-                echo ""
-                echo "❌ КРИТИЧНА ПОМИЛКА: pod install failed - Pods директорія не створена!"
-                echo "Неможливо продовжити build без dependencies"
-                exit 1
-              fi
-              
-              echo "✅ Pods встановлено успішно"
-              echo ""
-              echo "⚠️  ВАЖЛИВО: Застосовуємо API URL патч до щойно встановлених Pods..."
-              
-              # Патчимо Pods (той самий код що в КРОК 5 вище)
-              find Pods/ \( -name "*.swift" -o -name "*.m" -o -name "*.h" -o -name "*.strings" -o -name "*.plist" -o -name "*.json" \) \
-                -type f \
-                -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} + \
-                -exec sed -i '' 's/"api2oss"/"api2s"/g' {} + \
-                -exec sed -i '' "s/'api2oss'/'api2s'/g" {} + \
-                -exec sed -i '' 's/@"api2oss"/@"api2s"/g' {} + 2>/dev/null || true
-              
-              # Перевірка патчу
-              PODS_FALLBACK_CHECK=$(grep -r "api2oss" Pods/ --include="*.swift" --include="*.m" --include="*.h" --include="*.strings" --include="*.plist" --include="*.json" 2>/dev/null | wc -l | tr -d ' ')
-              
-              if [ "$PODS_FALLBACK_CHECK" -gt 0 ]; then
-                echo ""
-                echo "❌ КРИТИЧНА ПОМИЛКА: Не вдалося пропатчити Pods!"
-                echo "Знайдено $PODS_FALLBACK_CHECK входжень api2oss:"
-                grep -r "api2oss" Pods/ 2>/dev/null | head -10 || true
-                echo ""
-                echo "Неможливо продовжити build з непропатченими Pods"
-                exit 1
-              fi
-              
-              echo "✅ Pods пропатчено - api2oss відсутній"
-            else
-              echo "ℹ️  Pods і Podfile не знайдено - це Swift Package Manager project"
-              echo "Dependencies будуть downloaded під час build через SPM"
-              echo "Продовжуємо збірку..."
-            fi
-          fi
-          
-          # Xcode clean
-          echo "Виконуємо xcodebuild clean..."
-          xcodebuild clean -workspace DiiaOpenSource.xcworkspace -scheme DiiaOpenSource -configuration Debug 2>/dev/null || echo "Clean виконано (деякі помилки ігноруємо)"
-          
-          echo ""
-          echo "✅ Build кеш повністю очищено - app зберется з нуля з правильним API URL"
+      # ======================================================================
+      # API Patch: Мінімальний, через один скрипт
+      # ======================================================================
 
-      - name: Збірка iOS додатку для Simulator
-        id: build-app
+      - name: Patch API host (api2oss → api2s)
         run: |
-          echo "Починаємо збірку iOS додатку..."
-          echo "ВАЖЛИВО: Збірка відбувається ПІСЛЯ патчу API URL (api2oss → api2s)"
-          bash scripts/ios/build-app.sh
-          echo "Збірка завершена"
-        env:
-          IOS_SOURCE_DIR: ./ios-diia
-        continue-on-error: false  # Якщо збірка падає - зупиняємо workflow
-
-      - name: Патч Swift Package Dependencies після build
-        run: |
-          echo "=== Патчимо Swift Package Dependencies після build ==="
-          echo "КРИТИЧНО: Xcode downloaded packages під час build - патчимо їх!"
+          echo "=== Патч API Host ==="
+          bash scripts/ios/patch-api-host.sh ios-diia
           
-          cd ios-diia || exit 1
-          
-          # КРИТИЧНО: Accumulator для rebuild decision (не перезаписується в loops)
-          REBUILD_NEEDED=false
-          
-          # Знаходимо DerivedData директорію для цього build
-          BUILD_DERIVED_DATA="../ios-build/DerivedData"
-          
-          if [ -d "$BUILD_DERIVED_DATA" ]; then
-            echo "✅ Знайдено DerivedData: $BUILD_DERIVED_DATA"
-            
-            # Шукаємо SourcePackages
-            SOURCE_PACKAGES="$BUILD_DERIVED_DATA/SourcePackages"
-            
-            if [ -d "$SOURCE_PACKAGES" ]; then
-              echo "✅ Знайдено SourcePackages: $SOURCE_PACKAGES"
-              
-              # Показуємо скільки знайдено перед патчем
-              PKG_OLD_COUNT=$(grep -r "api2oss" "$SOURCE_PACKAGES" --include="*.swift" --include="*.m" --include="*.h" --include="*.strings" --include="*.plist" --include="*.json" 2>/dev/null | wc -l | tr -d ' ')
-              echo "Знайдено $PKG_OLD_COUNT входжень api2oss в downloaded packages"
-              
-              if [ "$PKG_OLD_COUNT" -gt 0 ]; then
-                echo "❌ КРИТИЧНА ПОМИЛКА: Знайдено api2oss в downloaded packages!"
-                echo ""
-                echo "Показуємо де знайдено:"
-                grep -r "api2oss" "$SOURCE_PACKAGES" --include="*.swift" --include="*.m" --include="*.h" 2>/dev/null | head -15 || true
-                echo ""
-                echo "Патчимо downloaded packages..."
-                
-                # Патчимо
-                find "$SOURCE_PACKAGES" \( -name "*.swift" -o -name "*.m" -o -name "*.h" -o -name "*.strings" -o -name "*.plist" -o -name "*.json" \) \
-                  -type f \
-                  -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} + \
-                  -exec sed -i '' 's/"api2oss"/"api2s"/g' {} + \
-                  -exec sed -i '' "s/'api2oss'/'api2s'/g" {} + \
-                  -exec sed -i '' 's/@"api2oss"/@"api2s"/g' {} + 2>/dev/null || true
-                
-                # Верифікація
-                PKG_OLD_AFTER=$(grep -r "api2oss" "$SOURCE_PACKAGES" --include="*.swift" --include="*.m" --include="*.h" --include="*.strings" --include="*.plist" --include="*.json" 2>/dev/null | wc -l | tr -d ' ')
-                echo "Після патчу залишилось: $PKG_OLD_AFTER входжень"
-                
-                if [ "$PKG_OLD_AFTER" -gt 0 ]; then
-                  echo ""
-                  echo "❌ КРИТИЧНА ПОМИЛКА: Не вдалося пропатчити downloaded packages!"
-                  echo "Знайдено $PKG_OLD_AFTER входжень api2oss:"
-                  grep -r "api2oss" "$SOURCE_PACKAGES" 2>/dev/null | head -20 || true
-                  echo ""
-                  echo "Можливі причини:"
-                  echo "1. Downloaded packages містять api2oss в бінарних файлах"
-                  echo "2. Upstream repository має хардкоджений api2oss у файлах"
-                  echo "3. sed не працює для деяких файлів"
-                  echo ""
-                  echo "Рекомендації:"
-                  echo "- Виправити в upstream repository"
-                  echo "- Або форкнути package і пропатчити там"
-                  echo ""
-                  echo "Зупиняємо workflow - неможливо тестувати app з неправильним API"
-                  exit 1
-                else
-                  echo "✅ Downloaded packages пропатчено - api2oss відсутній"
-                  # КРИТИЧНО: Помічаємо що потрібен rebuild
-                  REBUILD_NEEDED=true
-                  echo "🔄 Rebuild буде виконано після перевірки всіх locations"
-                fi
-              else
-                echo "✅ api2oss не знайдено в downloaded packages"
-              fi
-            else
-              echo "ℹ️  SourcePackages не знайдено - можливо немає external dependencies"
-            fi
-          else
-            echo "⚠️  DerivedData не знайдено: $BUILD_DERIVED_DATA"
-            echo "Перевіряємо інші можливі місця..."
-            
-            # Перевіряємо системні DerivedData
-            SYSTEM_DERIVED="$HOME/Library/Developer/Xcode/DerivedData"
-            if [ -d "$SYSTEM_DERIVED" ]; then
-              echo "Шукаємо в системних DerivedData..."
-              for PROJECT_DIR in "$SYSTEM_DERIVED"/DiiaOpenSource-*/; do
-                if [ -d "$PROJECT_DIR/SourcePackages" ]; then
-                  echo "✅ Знайдено SourcePackages: $PROJECT_DIR/SourcePackages"
-                  # Same patching logic as above
-                  SOURCE_PACKAGES="$PROJECT_DIR/SourcePackages"
-                  PKG_OLD_COUNT=$(grep -r "api2oss" "$SOURCE_PACKAGES" --include="*.swift" --include="*.m" --include="*.h" --include="*.strings" --include="*.plist" --include="*.json" 2>/dev/null | wc -l | tr -d ' ')
-                  if [ "$PKG_OLD_COUNT" -gt 0 ]; then
-                    echo "Знайдено $PKG_OLD_COUNT входжень, патчимо..."
-                    find "$SOURCE_PACKAGES" \( -name "*.swift" -o -name "*.m" -o -name "*.h" -o -name "*.strings" -o -name "*.plist" -o -name "*.json" \) \
-                      -type f \
-                      -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} + \
-                      -exec sed -i '' 's/"api2oss"/"api2s"/g' {} + \
-                      -exec sed -i '' "s/'api2oss'/'api2s'/g" {} + \
-                      -exec sed -i '' 's/@"api2oss"/@"api2s"/g' {} + 2>/dev/null || true
-                    
-                    # КРИТИЧНО: Верифікація після патчу для rebuild logic
-                    PKG_OLD_AFTER=$(grep -r "api2oss" "$SOURCE_PACKAGES" --include="*.swift" --include="*.m" --include="*.h" --include="*.strings" --include="*.plist" --include="*.json" 2>/dev/null | wc -l | tr -d ' ')
-                    echo "Після патчу залишилось: $PKG_OLD_AFTER входжень"
-                    
-                    if [ "$PKG_OLD_AFTER" -eq 0 ]; then
-                      echo "✅ Пропатчено успішно - api2oss відсутній"
-                      # КРИТИЧНО: Помічаємо що потрібен rebuild (не перезаписується в loop!)
-                      REBUILD_NEEDED=true
-                      echo "🔄 Rebuild буде виконано після перевірки всіх system directories"
-                    else
-                      echo ""
-                      echo "❌ КРИТИЧНА ПОМИЛКА: Не вдалося пропатчити system packages!"
-                      echo "Знайдено $PKG_OLD_AFTER входжень api2oss:"
-                      grep -r "api2oss" "$SOURCE_PACKAGES" --include="*.swift" --include="*.m" --include="*.h" 2>/dev/null | head -10 || true
-                      echo ""
-                      echo "Можливі причини:"
-                      echo "1. Downloaded packages містять api2oss в бінарних файлах"
-                      echo "2. Upstream repository має хардкоджений api2oss у файлах"
-                      echo "3. sed не працює для деяких файлів"
-                      echo ""
-                      echo "Зупиняємо workflow - неможливо тестувати app з неправильним API"
-                      exit 1
-                    fi
-                  fi
-                fi
-              done
-            fi
-          fi
-          
-          echo ""
-          echo "✅ Патч downloaded packages завершено"
-          
-          # КРИТИЧНО: Rebuild якщо БУДЬ-ЯКА location була пропатчена (не залежить від loop variables!)
-          if [ "$REBUILD_NEEDED" = true ]; then
-            echo ""
-            echo "=== REBUILD: Перебудовуємо app з пропатченими packages ==="
-            echo "КРИТИЧНО: Packages були пропатчені в одному або кількох locations - app треба зібрати заново!"
-            echo ""
-            
-            # КРИТИЧНО: Повертаємось до repo root перед rebuild
-            # (build-app.sh використовує pwd для визначення REPO_ROOT)
-            cd .. || exit 1
-            echo "Working directory для rebuild: $(pwd)"
-            
-            # Очищаємо app bundle щоб force rebuild
-            rm -rf ios-app/DiiaOpenSource.app
-            
-            # Rebuild з правильного repo root
-            echo "Починаємо rebuild..."
-            bash scripts/ios/build-app.sh
-            echo "✅ Rebuild завершено з пропатченими packages"
-          else
-            echo "ℹ️  Rebuild не потрібен - api2oss не знайдено або вже відсутній в packages"
-          fi
-
-      - name: Перевірка app bundle
-        id: verify-app
-        run: |
-          APP_PATH="./ios-app/DiiaOpenSource.app"
-          
-          if [ ! -d "$APP_PATH" ]; then
-            echo "App bundle не знайдено в $APP_PATH"
-            echo ""
-            echo "=== Діагностика ==="
-            echo "Структура ios-app директорії:"
-            ls -la ./ios-app/ 2>/dev/null || echo "Директорія ios-app не існує"
-            echo ""
-            echo "Останні 100 рядків build логу:"
-            if [ -f "./ios-build/xcodebuild.log" ]; then
-              tail -100 ./ios-build/xcodebuild.log
-            else
-              echo "Build лог не знайдено"
-            fi
+          # Перевірка результату
+          if [ $? -ne 0 ]; then
+            echo "❌ API patch failed"
             exit 1
           fi
           
-          echo "App bundle знайдено: $APP_PATH"
-          echo ""
-          echo "=== Інформація про app bundle ==="
-          ls -lh "$APP_PATH"
-          echo ""
+          echo "✅ API host патч завершено"
+
+      # ======================================================================
+      # Build: З ізольованим DerivedData
+      # ======================================================================
+
+      - name: Build iOS app for Simulator
+        id: build-app
+        run: bash scripts/ios/build-app.sh
+        env:
+          IOS_SOURCE_DIR: ./ios-diia
+        continue-on-error: false
+
+      # ======================================================================
+      # Verify: Binary check (критично)
+      # ======================================================================
+
+      - name: Verify app binary (API URL check)
+        id: verify-app
+        run: |
+          APP_PATH="./ios-app/DiiaOpenSource.app"
+          APP_BINARY="$APP_PATH/DiiaOpenSource"
           
-          # Отримуємо Bundle ID
-          BUNDLE_ID=$(defaults read "$APP_PATH/Info.plist" CFBundleIdentifier 2>/dev/null || echo "невідомо")
-          echo "Bundle ID: $BUNDLE_ID"
-          
-          # Отримуємо розмір
-          APP_SIZE=$(du -sh "$APP_PATH" | cut -f1)
-          echo "Розмір: $APP_SIZE"
-          
-          echo ""
-          echo "=== ✅ КРИТИЧНО: Перевірка API URL в зібраній app ==="
-          echo "Шукаємо API URL в Info.plist та інших конфігах..."
-          
-          # Перевіряємо Info.plist
-          if [ -f "$APP_PATH/Info.plist" ]; then
-            echo ""
-            echo "📄 Info.plist:"
-            # Конвертуємо в XML для читабельності
-            plutil -convert xml1 "$APP_PATH/Info.plist" -o /tmp/Info.plist.xml
-            
-            # Шукаємо API URLs
-            if grep -i "api.*diia.*gov" /tmp/Info.plist.xml; then
-              echo "✅ Знайдено API URL в Info.plist"
-            else
-              echo "⚠️  API URL не знайдено в Info.plist (можливо нормально)"
-            fi
-            
-            # Перевіряємо чи є старий URL
-            if grep -i "api2oss\.diia\.gov\.ua" /tmp/Info.plist.xml; then
-              echo "❌ ПОМИЛКА: Знайдено СТАРИЙ URL api2oss в Info.plist!"
-              echo "Патч НЕ СПРАЦЮВАВ для Info.plist"
-            fi
-            
-            # Перевіряємо чи є новий URL
-            if grep -i "api2s\.diia\.gov\.ua" /tmp/Info.plist.xml; then
-              echo "✅ Знайдено НОВИЙ URL api2s в Info.plist"
-            fi
+          if [ ! -d "$APP_PATH" ]; then
+            echo "❌ App bundle not found at $APP_PATH"
+            exit 1
           fi
           
-          # Шукаємо в binary (strings command)
+          echo "✅ App bundle exists: $APP_PATH"
+          
+          # Bundle ID
+          BUNDLE_ID=$(defaults read "$APP_PATH/Info.plist" CFBundleIdentifier 2>/dev/null || echo "unknown")
+          echo "Bundle ID: $BUNDLE_ID"
+          
+          # Size
+          APP_SIZE=$(du -sh "$APP_PATH" | cut -f1)
+          echo "Size: $APP_SIZE"
+          
+          # КРИТИЧНА ПЕРЕВІРКА: Binary має містити api2s і НЕ api2oss
           echo ""
-          echo "🔍 Шукаємо API URL в app binary..."
-          APP_BINARY="$APP_PATH/DiiaOpenSource"
+          echo "=== CRITICAL: API URL in binary ==="
           
           HAS_OLD_URL=false
           HAS_NEW_URL=false
           
           if [ -f "$APP_BINARY" ]; then
-            echo "Старий URL (api2oss):"
-            if strings "$APP_BINARY" | grep -i "api2oss\.diia\.gov\.ua" | head -3; then
-              echo "❌ КРИТИЧНА ПОМИЛКА: СТАРИЙ URL знайдено в binary!"
-              echo "Це означає що app зібрався з неправильним конфігом"
+            # Check for old URL
+            if strings "$APP_BINARY" | grep -qi "api2oss\.diia\.gov\.ua"; then
+              echo "❌ FAIL: OLD URL (api2oss) found in binary!"
               HAS_OLD_URL=true
             else
-              echo "✅ Старий URL НЕ знайдено в binary"
+              echo "✅ Old URL (api2oss) NOT found"
             fi
             
-            echo ""
-            echo "Новий URL (api2s):"
-            if strings "$APP_BINARY" | grep -i "api2s\.diia\.gov\.ua" | head -3; then
-              echo "✅ Новий URL знайдено в binary - патч спрацював!"
+            # Check for new URL
+            if strings "$APP_BINARY" | grep -qi "api2s\.diia\.gov\.ua"; then
+              echo "✅ New URL (api2s) found in binary"
               HAS_NEW_URL=true
             else
-              echo "❌ КРИТИЧНА ПОМИЛКА: НОВИЙ URL НЕ знайдено в binary!"
-              echo "Це означає що патч НЕ СПРАЦЮВАВ або app зібрався з кешу"
+              echo "❌ FAIL: NEW URL (api2s) NOT found in binary!"
             fi
             
-            echo ""
-            echo "=== ФІНАЛЬНА ПЕРЕВІРКА ==="
+            # Final verdict
             if [ "$HAS_OLD_URL" = true ]; then
-              echo "❌ FAIL: Старий URL (api2oss) все ще в binary"
               echo ""
-              echo "Патч НЕ ПОВНІСТЮ спрацював. Можливі причини:"
-              echo "1. Pods містять хардкоджений api2oss"
-              echo "2. Якийсь згенерований файл має старий URL"
-              echo "3. Build кеш не повністю очищено"
-              echo ""
-              echo "Зупиняємо workflow - app не можна тестувати з неправильним API"
+              echo "❌ CRITICAL FAIL: App built with wrong API endpoint (api2oss)"
+              echo "Cannot proceed with tests - API calls will fail"
               exit 1
             fi
             
             if [ "$HAS_NEW_URL" = false ]; then
-              echo "❌ FAIL: Новий URL (api2s) НЕ знайдено в binary"
               echo ""
-              echo "Патч НЕ спрацював взагалі. Можливі причини:"
-              echo "1. Патч застосувався після збірки"
-              echo "2. Build скрипт ігнорує пропатчені файли"
-              echo "3. API URL генерується динамічно"
-              echo ""
-              echo "Зупиняємо workflow - app не можна тестувати з неправильним API"
+              echo "❌ CRITICAL FAIL: Patch did not apply (api2s not found)"
+              echo "Cannot proceed with tests - API calls will fail"
               exit 1
             fi
             
-            echo "✅ SUCCESS: Тільки новий URL (api2s) в binary, старий відсутній"
+            echo ""
+            echo "✅ SUCCESS: App binary contains correct API endpoint (api2s only)"
+          else
+            echo "⚠️  Binary file not found, skipping binary check"
           fi
           
-          echo ""
-          echo "=== Результат перевірки ==="
-          # Зберігаємо для job summary
+          # Output для job summary
           echo "app_size=$APP_SIZE" >> $GITHUB_OUTPUT
           echo "bundle_id=$BUNDLE_ID" >> $GITHUB_OUTPUT
 
-      # ========================================
-      # КРОК 4: Запуск iOS Simulator
-      # ========================================
+      # ======================================================================
+      # КРОК 4: Simulator
+      # ======================================================================
 
-      - name: Запуск iOS Simulator
+      - name: Boot iOS Simulator
         id: boot-sim
-        run: |
-          echo "Запускаємо iOS Simulator..."
-          bash scripts/ios/boot-sim.sh
-          echo "Simulator запущено"
+        run: bash scripts/ios/boot-sim.sh
         env:
-          OPEN_SIMULATOR: false  # Не відкриваємо GUI в CI
+          OPEN_SIMULATOR: false
 
-      - name: Перевірка стану Simulator
+      - name: Verify Simulator status
         run: |
-          echo "Перевіряємо чи Simulator запущено..."
-          BOOTED_DEVICE=$(xcrun simctl list devices | grep "Booted" || echo "")
+          echo "Checking Simulator status..."
+          BOOTED=$(xcrun simctl list devices | grep "Booted" || echo "")
           
-          if [ -z "$BOOTED_DEVICE" ]; then
-            echo "Simulator не запущено або не в статусі Booted"
-            echo ""
-            echo "=== Доступні пристрої ==="
+          if [ -z "$BOOTED" ]; then
+            echo "❌ No Booted simulator found"
+            echo "Available devices:"
             xcrun simctl list devices
             exit 1
           fi
           
-          echo "Simulator запущено:"
-          echo "$BOOTED_DEVICE"
+          echo "✅ Simulator booted:"
+          echo "$BOOTED"
 
-      - name: Попереднє встановлення app на Simulator
+      - name: Install app on Simulator (with retries)
         run: |
-          echo "Встановлюємо app на Simulator заздалегідь для швидшого запуску тестів..."
           UDID="${{ steps.boot-sim.outputs.udid }}"
           APP_PATH="./ios-app/DiiaOpenSource.app"
           
-          # Встановлюємо app
-          xcrun simctl install "$UDID" "$APP_PATH"
-          echo "App встановлено на Simulator"
+          echo "Installing app on Simulator (UDID: $UDID)..."
           
-          # Даємо час симулятору обробити встановлення
-          sleep 5
+          # Retry logic: 3 attempts with 2s sleep between
+          MAX_RETRIES=3
+          RETRY_COUNT=0
           
-          # Перевіряємо що app встановлено
-          if xcrun simctl listapps "$UDID" | grep -q "ua.gov.diia.opensource.app"; then
-            echo "✅ App успішно встановлено та підтверджено"
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            if xcrun simctl install "$UDID" "$APP_PATH" 2>/dev/null; then
+              echo "✅ App installed successfully"
+              break
+            else
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                echo "⚠️  Install failed (attempt $RETRY_COUNT/$MAX_RETRIES), retrying in 2s..."
+                sleep 2
+              else
+                echo "❌ App install failed after $MAX_RETRIES attempts"
+                exit 1
+              fi
+            fi
+          done
+          
+          # Verify installation
+          sleep 3
+          if xcrun simctl listapps "$UDID" | grep -q "${{ env.IOS_BUNDLE_ID }}"; then
+            echo "✅ App verified in simulator app list"
           else
-            echo "⚠️  App може бути не встановлено правильно"
+            echo "⚠️  App not visible in listapps (may still work)"
           fi
 
-      # ========================================
-      # КРОК 5: Запуск тестів
-      # ========================================
+      # ======================================================================
+      # КРОК 5: Тести
+      # ======================================================================
 
-      - name: Запуск iOS E2E тестів
+      - name: Run iOS E2E tests
         id: run-tests
         run: |
-          echo "Запускаємо iOS тести..."
+          echo "=== Running iOS E2E tests ==="
+          echo "App: ${IOS_APP_PATH}"
+          echo "UDID: ${IOS_DEVICE_UDID}"
+          echo "Device: ${IOS_DEVICE_NAME}"
+          echo "iOS: ${IOS_PLATFORM_VERSION}"
           echo ""
-          echo "=== Конфігурація ==="
-          echo "App path: ${IOS_APP_PATH}"
-          echo "Device UDID: ${IOS_DEVICE_UDID}"
-          echo "Device name: ${IOS_DEVICE_NAME}"
-          echo "Platform version: ${IOS_PLATFORM_VERSION}"
-          echo ""
-          echo "=== Перевірка app перед запуском ==="
-          ls -lh "${IOS_APP_PATH}"
-          echo ""
-          echo "=== Запуск тестів ==="
+          
           npm run test:ios:ci
         env:
           IOS_APP_PATH: ./ios-app/DiiaOpenSource.app
           IOS_DEVICE_UDID: ${{ steps.boot-sim.outputs.udid }}
-        timeout-minutes: 60  # Збільшено timeout для великого app
+        timeout-minutes: 45
 
-      # ========================================
-      # КРОК 6: Збір артефактів при помилках
-      # ========================================
+      # ======================================================================
+      # КРОК 6: Артефакти (failure only)
+      # ======================================================================
 
-      - name: Завантаження скріншотів (при помилці)
+      - name: Upload screenshots (on failure)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: ios-screenshots-${{ github.run_number }}
-          path: artifacts/screenshots/**
+          path: artifacts/screenshots/
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: Завантаження page source (при помилці)
+      - name: Upload page sources (on failure)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: ios-pagesources-${{ github.run_number }}
-          path: artifacts/pagesources/**
+          path: artifacts/pagesources/
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: Завантаження build логів (при помилці)
+      - name: Upload build logs (on failure)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -890,61 +391,63 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: Завантаження Appium логів (при помилці)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-appium-logs-${{ github.run_number }}
-          path: |
-            appium.log
-            appium*.log
-          retention-days: 7
-          if-no-files-found: ignore
-
-      - name: Завантаження WebDriver логів (при помилці)
+      - name: Upload WDIO logs (on failure)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: ios-wdio-logs-${{ github.run_number }}
-          path: |
-            wdio-*.log
+          path: wdio-*.log
           retention-days: 7
           if-no-files-found: ignore
 
-      # ========================================
-      # КРОК 7: Job Summary
-      # ========================================
+      - name: Simulator diagnostics (on failure)
+        if: failure()
+        run: |
+          echo "=== Simulator List ==="
+          xcrun simctl list devices
+          echo ""
+          echo "=== Booted Simulators ==="
+          xcrun simctl list devices | grep "Booted"
 
-      - name: Створення job summary
+      # ======================================================================
+      # КРОК 7: Job Summary
+      # ======================================================================
+
+      - name: Create job summary
         if: always()
         run: |
-          echo "## iOS Tests Summary" >> $GITHUB_STEP_SUMMARY
+          echo "# iOS Tests Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Конфігурація
-          echo "### Конфігурація" >> $GITHUB_STEP_SUMMARY
-          echo "- **Пристрій**: ${{ env.IOS_DEVICE_NAME }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **iOS версія**: ${{ env.IOS_PLATFORM_VERSION }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Bundle ID**: ${{ steps.verify-app.outputs.bundle_id || 'N/A' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **App розмір**: ${{ steps.verify-app.outputs.app_size || 'N/A' }}" >> $GITHUB_STEP_SUMMARY
+          # Configuration
+          echo "## Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Device** | ${{ env.IOS_DEVICE_NAME }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **iOS** | ${{ env.IOS_PLATFORM_VERSION }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **App Tag** | ${{ env.IOS_APP_TAG }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Bundle ID** | ${{ steps.verify-app.outputs.bundle_id || 'N/A' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **App Size** | ${{ steps.verify-app.outputs.app_size || 'N/A' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **UDID** | ${{ steps.boot-sim.outputs.udid || 'N/A' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Статус тестів
-          echo "### Результати тестів" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.run-tests.outcome }}" == "success" ]; then
-            echo "**Всі тести пройшли успішно**" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "**Тести завершились з помилками**" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Перегляньте артефакти для детальної інформації:" >> $GITHUB_STEP_SUMMARY
-            echo "- Скріншоти помилок" >> $GITHUB_STEP_SUMMARY
-            echo "- Page source файли" >> $GITHUB_STEP_SUMMARY
-            echo "- Build та Appium логи" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # Xcode інформація
-          echo "### Xcode Environment" >> $GITHUB_STEP_SUMMARY
+          # Xcode
+          echo "## Xcode Environment" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           xcodebuild -version >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Test Results
+          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.run-tests.outcome }}" == "success" ]; then
+            echo "✅ **All tests passed**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Tests failed**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Artifacts uploaded:**" >> $GITHUB_STEP_SUMMARY
+            echo "- Screenshots" >> $GITHUB_STEP_SUMMARY
+            echo "- Page sources" >> $GITHUB_STEP_SUMMARY
+            echo "- Build logs" >> $GITHUB_STEP_SUMMARY
+            echo "- WDIO logs" >> $GITHUB_STEP_SUMMARY
+          fi

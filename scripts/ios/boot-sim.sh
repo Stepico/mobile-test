@@ -57,23 +57,50 @@ except Exception as e:
     print('')
 " 2>/dev/null || echo "")
 
-# Якщо не знайдено точний match, використовуємо fallback
+# Якщо не знайдено точний match, спробуємо створити device
 if [ -z "$DEVICE_UDID" ]; then
-    echo "⚠️ Точний match не знайдено, використовуємо fallback на найближчий доступний iPhone з iOS runtime"
+    echo "⚠️  Device '$DEVICE_NAME' з iOS $PLATFORM_VERSION не знайдено"
+    echo "Спробуємо створити новий device..."
     
-    # Fallback: знаходимо найближчий доступний iPhone
-    DEVICE_UDID=$(echo "$AVAILABLE_DEVICES" | python3 -c "
+    # Знаходимо точний runtime identifier
+    RUNTIME_IDENTIFIER=$(xcrun simctl list runtimes available -j 2>/dev/null | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    target_id = 'com.apple.CoreSimulator.SimRuntime.iOS-$RUNTIME_ID'
+    for runtime in data.get('runtimes', []):
+        if '$RUNTIME_ID' in runtime.get('identifier', ''):
+            print(runtime['identifier'])
+            sys.exit(0)
+    print('')
+except:
+    print('')
+" 2>/dev/null || echo "")
+    
+    if [ -n "$RUNTIME_IDENTIFIER" ]; then
+        echo "Створюємо device: $DEVICE_NAME з runtime $RUNTIME_IDENTIFIER"
+        DEVICE_UDID=$(xcrun simctl create "$DEVICE_NAME" com.apple.CoreSimulator.SimDeviceType."$(echo "$DEVICE_NAME" | sed 's/ /-/g')" "$RUNTIME_IDENTIFIER" 2>/dev/null || echo "")
+        
+        if [ -n "$DEVICE_UDID" ]; then
+            echo "✅ Device створено з UDID: $DEVICE_UDID"
+        else
+            echo "⚠️  Не вдалося створити device, використовуємо fallback..."
+        fi
+    fi
+    
+    # Якщо створення не вдалося, fallback на найближчий доступний iPhone
+    if [ -z "$DEVICE_UDID" ]; then
+        echo "Fallback: шукаємо найближчий доступний iPhone..."
+        DEVICE_UDID=$(echo "$AVAILABLE_DEVICES" | python3 -c "
 import sys, json
 try:
     data = json.load(sys.stdin)
     target_major = int('$MAJOR_VERSION')
     
-    # Сортуємо runtimes за близькістю до цільової версії
     best_device = None
     best_diff = float('inf')
     
     for runtime_id, devices in data.get('devices', {}).items():
-        # Витягуємо версію з runtime_id (наприклад iOS-17-4 -> 17)
         try:
             runtime_parts = runtime_id.split('-')
             if len(runtime_parts) >= 2:
@@ -94,13 +121,14 @@ try:
         print('')
 except Exception:
     print('')
-" 2>/dev/null)
-    
-    if [ -z "$DEVICE_UDID" ]; then
-        echo "❌ Не знайдено жодного доступного iPhone simulator"
-        echo "Доступні пристрої:"
-        xcrun simctl list devices available | grep -i "iphone" | head -10
-        exit 1
+" 2>/dev/null || echo "")
+        
+        if [ -z "$DEVICE_UDID" ]; then
+            echo "❌ Не знайдено жодного доступного iPhone simulator"
+            echo "Доступні пристрої:"
+            xcrun simctl list devices available | grep -i "iphone" | head -10
+            exit 1
+        fi
     fi
 fi
 

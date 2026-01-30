@@ -93,6 +93,16 @@ describe('Auth test suite', () => {
         // Setup: start from PIN_LOGIN screen with PIN '0' set
         await setupTestState(SCREEN_STATE.PIN_LOGIN, { pinCode: '0' });
         
+        // Add extra verification and stabilization
+        await driver.pause(1000);
+        const state = await detectScreen();
+        console.log(`[INFO] Current state after setupTestState: ${state}`);
+        
+        if (state !== SCREEN_STATE.PIN_LOGIN) {
+            console.log(`[WARNING] Expected PIN_LOGIN but got ${state}, ensuring correct state...`);
+            await ensureOnPinLoginScreen(15000);
+        }
+        
         // Test logic
         await login('0');
         await assertGreeting();
@@ -104,11 +114,22 @@ describe('Auth test suite', () => {
         // Setup: start from PIN_LOGIN screen with PIN '0' set
         await setupTestState(SCREEN_STATE.PIN_LOGIN, { pinCode: '0' });
         
+        // Add extra verification and stabilization
+        await driver.pause(1000);
+        const state = await detectScreen();
+        console.log(`[INFO] Current state after setupTestState: ${state}`);
+        
+        if (state !== SCREEN_STATE.PIN_LOGIN) {
+            console.log(`[WARNING] Expected PIN_LOGIN but got ${state}, ensuring correct state...`);
+            await ensureOnPinLoginScreen(15000);
+        }
+        
         // Test logic
         // forgotCode() now ensures we're on AUTH screen at the end
         await forgotCode();
-        // Small delay to ensure UI is stable before authorizing
-        await driver.pause(1000);
+        // Wait for AUTH screen to be fully ready
+        await driver.pause(2000);
+        await waitForLoadingToComplete(30000);
         await authorize('1');
         await assertGreeting();
     });
@@ -281,10 +302,23 @@ describe('Auth test suite', () => {
         this.timeout(900000); // 15 minutes for double BankID flow (3 wrong PINs + reauthorize)
         
         // Setup: start from PIN_LOGIN screen with PIN '0' set
-        await setupTestState(SCREEN_STATE.PIN_LOGIN, { pinCode: '0' });
+        // Use PIN '4' instead of '0' to avoid conflicts with other tests
+        await setupTestState(SCREEN_STATE.PIN_LOGIN, { pinCode: '4' });
+        
+        // Add extra verification and stabilization
+        await driver.pause(1000);
+        const state = await detectScreen();
+        console.log(`[INFO] Current state after setupTestState: ${state}`);
+        
+        if (state !== SCREEN_STATE.PIN_LOGIN) {
+            console.log(`[WARNING] Expected PIN_LOGIN but got ${state}, ensuring correct state...`);
+            await ensureOnPinLoginScreen(15000);
+        }
         
         // Test logic: Enter wrong PIN 3 times
         for (let i = 0; i < 3; ++i) {
+            console.log(`[INFO] Entering wrong PIN attempt ${i + 1}/3`);
+            
             // Verify we're still on PIN login screen before each attempt
             const currentState = await detectScreen();
             if (currentState !== SCREEN_STATE.PIN_LOGIN && i < 2) {
@@ -295,25 +329,30 @@ describe('Auth test suite', () => {
             await enterPinCode('9');
             
             // After entering PIN, wait a bit for app to process
-            await driver.pause(500);
+            await driver.pause(800);
         }
 
         // After 3rd wrong attempt, wait for popup to appear
-        await driver.pause(500);
+        console.log('[INFO] Waiting for error popup after 3 wrong PIN attempts');
+        await driver.pause(1000);
         
         // Wait for and assert the popup
         await assertPopup(
             'Ви ввели неправильний код тричі',
             'Пройдіть повторну авторизацію у застосунку'
         );
+        console.log('[INFO] Error popup confirmed');
 
         // Click "Авторизуватися" button
         const authorizeBtn = getElementByClassChain('Button', 'name == "Авторизуватися" OR label == "Авторизуватися"');
         await authorizeBtn.waitForDisplayed({ timeout: 5000 });
         await authorizeBtn.click();
+        console.log('[INFO] Clicked Authorize button');
 
         // After clicking "Авторизуватися", wait for AUTH screen to appear
-        await driver.pause(2000);
+        console.log('[INFO] Waiting for app to navigate to AUTH screen');
+        await driver.pause(3000);
+        await waitForLoadingToComplete(30000);
         
         // Wait for AUTH screen with retry logic
         await driver.waitUntil(
@@ -371,8 +410,10 @@ describe('Auth test suite', () => {
             { timeout: 30000, timeoutMsg: 'AUTH screen did not appear after clicking "Авторизуватися"' }
         );
 
-        // Reauthorize with new PIN '4'
-        await authorize('4');
+        // Reauthorize with new PIN '5'
+        console.log('[INFO] Starting reauthorization with new PIN');
+        await authorize('5');
         await assertGreeting();
+        console.log('[INFO] Reauthorization successful');
     });
 });
