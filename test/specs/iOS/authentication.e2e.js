@@ -407,7 +407,10 @@ describe('Auth test suite', () => {
                     return false;
                 }
             },
-            { timeout: 30000, timeoutMsg: 'AUTH screen did not appear after clicking "Авторизуватися"' }
+            { 
+                timeout: process.env.CI ? 90000 : 30000,  // 90s in CI (slower!), 30s locally
+                timeoutMsg: 'AUTH screen did not appear after clicking "Авторизуватися"' 
+            }
         );
 
         // Reauthorize with new PIN '5'

@@ -95,7 +95,8 @@ exports.config = {
     // ===================
     logLevel: 'info',
     bail: 0,
-    waitforTimeout: 10000,
+    // Increased for CI (simulator slower after running 8+ tests)
+    waitforTimeout: process.env.CI ? 20000 : 10000,  // 20s in CI, 10s locally
     // Increased timeouts for large app (111MB) installation and launch
     connectionRetryTimeout: process.env.CI ? 600000 : 120000, // 10 minutes CI, 2 minutes local
     connectionRetryCount: 3, // Try 3 times before giving up
