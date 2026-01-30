@@ -111,11 +111,15 @@ jobs:
           xcrun simctl list runtimes available | grep -i "ios" || echo "⚠️  No iOS runtimes found"
           
           echo "=== Доступні iPhone simulators (top 10) ==="
-          IPHONES=$(xcrun simctl list devices available | grep -i "iphone" | head -10 || true)
-          if [ -z "$IPHONES" ]; then
-            echo "⚠️  No iPhone simulators found"
+          if ! xcrun simctl list devices available >/dev/null 2>&1; then
+            echo "❌ Failed to list simulators (check xcrun/simctl availability or permissions)"
           else
-            echo "$IPHONES"
+            IPHONES=$(xcrun simctl list devices available | grep -i "iphone" | head -10 || true)
+            if [ -z "$IPHONES" ]; then
+              echo "⚠️  No iPhone simulators found"
+            else
+              echo "$IPHONES"
+            fi
           fi
 
       # ======================================================================
