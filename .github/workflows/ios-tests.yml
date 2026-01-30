@@ -320,7 +320,64 @@ jobs:
               fi
             fi
           else
-            echo "ℹ️  Podfile не знайдено, пропускаємо"
+            echo "ℹ️  Podfile не знайдено - це може бути Swift Package Manager проект"
+            echo ""
+            echo "=== КРОК 6: Патчимо Swift Package Dependencies ==="
+            echo "КРИТИЧНО: Swift packages може містити хардкоджений api2oss - патчимо!"
+            
+            # Шукаємо директорії де можуть бути downloaded packages
+            PACKAGE_DIRS=(
+              ".build/checkouts"
+              "$HOME/Library/Developer/Xcode/DerivedData/*/SourcePackages/checkouts"
+              "$HOME/Library/Developer/Xcode/DerivedData/SourcePackages/checkouts"
+              "./.build/repositories"
+            )
+            
+            PACKAGES_FOUND=false
+            
+            for PKG_DIR_PATTERN in "${PACKAGE_DIRS[@]}"; do
+              # Використовуємо glob для знаходження директорій
+              for PKG_DIR in $PKG_DIR_PATTERN; do
+                if [ -d "$PKG_DIR" ]; then
+                  echo "✅ Знайдено Swift packages в: $PKG_DIR"
+                  PACKAGES_FOUND=true
+                  
+                  # Показуємо скільки знайдено перед патчем
+                  PKG_OLD_COUNT=$(grep -r "api2oss" "$PKG_DIR" --include="*.swift" --include="*.m" --include="*.h" --include="*.strings" --include="*.plist" --include="*.json" 2>/dev/null | wc -l | tr -d ' ')
+                  echo "Знайдено $PKG_OLD_COUNT входжень api2oss в packages"
+                  
+                  if [ "$PKG_OLD_COUNT" -gt 0 ]; then
+                    echo "Патчимо packages..."
+                    
+                    # Патчимо
+                    find "$PKG_DIR" \( -name "*.swift" -o -name "*.m" -o -name "*.h" -o -name "*.strings" -o -name "*.plist" -o -name "*.json" \) \
+                      -type f \
+                      -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} + \
+                      -exec sed -i '' 's/"api2oss"/"api2s"/g' {} + \
+                      -exec sed -i '' "s/'api2oss'/'api2s'/g" {} + \
+                      -exec sed -i '' 's/@"api2oss"/@"api2s"/g' {} + 2>/dev/null || true
+                    
+                    # Верифікація
+                    PKG_OLD_AFTER=$(grep -r "api2oss" "$PKG_DIR" --include="*.swift" --include="*.m" --include="*.h" --include="*.strings" --include="*.plist" --include="*.json" 2>/dev/null | wc -l | tr -d ' ')
+                    echo "Після патчу залишилось: $PKG_OLD_AFTER входжень"
+                    
+                    if [ "$PKG_OLD_AFTER" -gt 0 ]; then
+                      echo "⚠️  В packages все ще є api2oss:"
+                      grep -r "api2oss" "$PKG_DIR" --include="*.swift" --include="*.m" --include="*.h" 2>/dev/null | head -10 || true
+                    else
+                      echo "✅ Packages пропатчено"
+                    fi
+                  else
+                    echo "✅ api2oss не знайдено в packages"
+                  fi
+                fi
+              done
+            done
+            
+            if [ "$PACKAGES_FOUND" = false ]; then
+              echo "ℹ️  Swift package checkouts ще не downloaded (це нормально)"
+              echo "Packages будуть downloaded під час build і НЕ міститимуть api2oss якщо source код пропатчено"
+            fi
           fi
 
       - name: Очищення build кешу для чистої збірки
@@ -427,6 +484,118 @@ jobs:
         env:
           IOS_SOURCE_DIR: ./ios-diia
         continue-on-error: false  # Якщо збірка падає - зупиняємо workflow
+
+      - name: Патч Swift Package Dependencies після build
+        run: |
+          echo "=== Патчимо Swift Package Dependencies після build ==="
+          echo "КРИТИЧНО: Xcode downloaded packages під час build - патчимо їх!"
+          
+          cd ios-diia || exit 1
+          
+          # Знаходимо DerivedData директорію для цього build
+          BUILD_DERIVED_DATA="../ios-build/DerivedData"
+          
+          if [ -d "$BUILD_DERIVED_DATA" ]; then
+            echo "✅ Знайдено DerivedData: $BUILD_DERIVED_DATA"
+            
+            # Шукаємо SourcePackages
+            SOURCE_PACKAGES="$BUILD_DERIVED_DATA/SourcePackages"
+            
+            if [ -d "$SOURCE_PACKAGES" ]; then
+              echo "✅ Знайдено SourcePackages: $SOURCE_PACKAGES"
+              
+              # Показуємо скільки знайдено перед патчем
+              PKG_OLD_COUNT=$(grep -r "api2oss" "$SOURCE_PACKAGES" --include="*.swift" --include="*.m" --include="*.h" --include="*.strings" --include="*.plist" --include="*.json" 2>/dev/null | wc -l | tr -d ' ')
+              echo "Знайдено $PKG_OLD_COUNT входжень api2oss в downloaded packages"
+              
+              if [ "$PKG_OLD_COUNT" -gt 0 ]; then
+                echo "❌ КРИТИЧНА ПОМИЛКА: Знайдено api2oss в downloaded packages!"
+                echo ""
+                echo "Показуємо де знайдено:"
+                grep -r "api2oss" "$SOURCE_PACKAGES" --include="*.swift" --include="*.m" --include="*.h" 2>/dev/null | head -15 || true
+                echo ""
+                echo "Патчимо downloaded packages..."
+                
+                # Патчимо
+                find "$SOURCE_PACKAGES" \( -name "*.swift" -o -name "*.m" -o -name "*.h" -o -name "*.strings" -o -name "*.plist" -o -name "*.json" \) \
+                  -type f \
+                  -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} + \
+                  -exec sed -i '' 's/"api2oss"/"api2s"/g' {} + \
+                  -exec sed -i '' "s/'api2oss'/'api2s'/g" {} + \
+                  -exec sed -i '' 's/@"api2oss"/@"api2s"/g' {} + 2>/dev/null || true
+                
+                # Верифікація
+                PKG_OLD_AFTER=$(grep -r "api2oss" "$SOURCE_PACKAGES" --include="*.swift" --include="*.m" --include="*.h" --include="*.strings" --include="*.plist" --include="*.json" 2>/dev/null | wc -l | tr -d ' ')
+                echo "Після патчу залишилось: $PKG_OLD_AFTER входжень"
+                
+                if [ "$PKG_OLD_AFTER" -gt 0 ]; then
+                  echo ""
+                  echo "❌ FAIL: Не вдалося пропатчити downloaded packages!"
+                  echo "Знайдено $PKG_OLD_AFTER входжень api2oss:"
+                  grep -r "api2oss" "$SOURCE_PACKAGES" 2>/dev/null | head -20 || true
+                  echo ""
+                  echo "⚠️  УВАГА: Downloaded packages містять хардкоджений api2oss!"
+                  echo "Це означає що source repository має api2oss у файлах"
+                  echo "Потрібно виправити в upstream repository або форкнути package"
+                  echo ""
+                  echo "КРИТИЧНО: App зібрався з api2oss - тести можуть failed!"
+                  echo "Продовжуємо але app може працювати неправильно..."
+                else
+                  echo "✅ Downloaded packages пропатчено - api2oss відсутній"
+                fi
+              else
+                echo "✅ api2oss не знайдено в downloaded packages"
+              fi
+            else
+              echo "ℹ️  SourcePackages не знайдено - можливо немає external dependencies"
+            fi
+          else
+            echo "⚠️  DerivedData не знайдено: $BUILD_DERIVED_DATA"
+            echo "Перевіряємо інші можливі місця..."
+            
+            # Перевіряємо системні DerivedData
+            SYSTEM_DERIVED="$HOME/Library/Developer/Xcode/DerivedData"
+            if [ -d "$SYSTEM_DERIVED" ]; then
+              echo "Шукаємо в системних DerivedData..."
+              for PROJECT_DIR in "$SYSTEM_DERIVED"/DiiaOpenSource-*/; do
+                if [ -d "$PROJECT_DIR/SourcePackages" ]; then
+                  echo "✅ Знайдено SourcePackages: $PROJECT_DIR/SourcePackages"
+                  # Same patching logic as above
+                  SOURCE_PACKAGES="$PROJECT_DIR/SourcePackages"
+                  PKG_OLD_COUNT=$(grep -r "api2oss" "$SOURCE_PACKAGES" --include="*.swift" --include="*.m" --include="*.h" --include="*.strings" --include="*.plist" --include="*.json" 2>/dev/null | wc -l | tr -d ' ')
+                  if [ "$PKG_OLD_COUNT" -gt 0 ]; then
+                    echo "Знайдено $PKG_OLD_COUNT входжень, патчимо..."
+                    find "$SOURCE_PACKAGES" \( -name "*.swift" -o -name "*.m" -o -name "*.h" -o -name "*.strings" -o -name "*.plist" -o -name "*.json" \) \
+                      -type f \
+                      -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} + \
+                      -exec sed -i '' 's/"api2oss"/"api2s"/g' {} + \
+                      -exec sed -i '' "s/'api2oss'/'api2s'/g" {} + \
+                      -exec sed -i '' 's/@"api2oss"/@"api2s"/g' {} + 2>/dev/null || true
+                    echo "✅ Пропатчено"
+                  fi
+                fi
+              done
+            fi
+          fi
+          
+          echo ""
+          echo "✅ Патч downloaded packages завершено"
+          
+          # Якщо знайшли та пропатчили packages - треба rebuild app!
+          if [ -n "$PKG_OLD_COUNT" ] && [ "$PKG_OLD_COUNT" -gt 0 ] && [ -n "$PKG_OLD_AFTER" ] && [ "$PKG_OLD_AFTER" -eq 0 ]; then
+            echo ""
+            echo "=== REBUILD: Перебудовуємо app з пропатченими packages ==="
+            echo "КРИТИЧНО: Packages були пропатчені - app треба зібрати заново!"
+            echo ""
+            
+            # Очищаємо app bundle щоб force rebuild
+            rm -rf ../ios-app/DiiaOpenSource.app
+            
+            # Rebuild
+            echo "Починаємо rebuild..."
+            bash ../scripts/ios/build-app.sh
+            echo "✅ Rebuild завершено з пропатченими packages"
+          fi
 
       - name: Перевірка app bundle
         id: verify-app
