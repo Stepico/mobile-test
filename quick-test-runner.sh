@@ -1,7 +1,8 @@
 #!/bin/bash
 # Швидкий запуск всіх тестів
 
-cd /Users/romantimchenko/diia-app/mobile-test
+# Перехід до директорії скрипта
+cd "$(dirname "$0")"
 
 echo "=========================================="
 echo "Запуск всіх 9 iOS Auth тестів"

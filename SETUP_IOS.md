@@ -63,7 +63,7 @@ npx appium driver list
 
 1. Відкрити iOS проект в Xcode:
    ```bash
-   cd /Users/romantimchenko/diia-open-source/ios-diia
+   cd /path/to/ios-diia
    open DiiaOpenSource.xcodeproj
    ```
 

@@ -3,7 +3,7 @@
   "appium:deviceName": "iPhone 17 Pro Max",
   "appium:platformVersion": "17.4",
   "appium:automationName": "XCUITest",
-  "appium:app": "/Users/romantimchenko/diia-open-source/ios-diia/build/Build/Products/Debug-iphonesimulator/DiiaOpenSource.app",
+  "appium:app": "/path/to/ios-diia/build/Build/Products/Debug-iphonesimulator/DiiaOpenSource.app",
   "appium:bundleId": "ua.gov.diia.opensource.app",
   "appium:noReset": false,
   "appium:fullReset": false,

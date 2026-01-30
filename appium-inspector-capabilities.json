@@ -3,7 +3,7 @@
   "appium:deviceName": "iPhone 15 Pro Max",
   "appium:platformVersion": "18.0",
   "appium:automationName": "XCUITest",
-  "appium:app": "/Users/romantimchenko/diia-open-source/ios-diia/build/Build/Products/Debug-iphonesimulator/DiiaOpenSource.app",
+  "appium:app": "/path/to/ios-diia/build/Build/Products/Debug-iphonesimulator/DiiaOpenSource.app",
   "appium:bundleId": "ua.gov.diia.opensource.app",
   "appium:noReset": false,
   "appium:fullReset": false,
