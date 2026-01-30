@@ -437,7 +437,7 @@ async function ensureOnPinLoginScreen(timeout = 20000) {
         // Wait for loading first
         await waitForLoadingToComplete(timeout);
         
-        const currentState = await detectScreen();
+        let currentState = await detectScreen();
         logStep('ensureOnPinLoginScreen', `Current state: ${currentState}`);
         
         if (currentState === SCREEN_STATE.PIN_LOGIN) {
@@ -450,6 +450,9 @@ async function ensureOnPinLoginScreen(timeout = 20000) {
             logStep('ensureOnPinLoginScreen', 'On MAIN, restarting to get to PIN_LOGIN');
             await restart();
             await waitForLoadingToComplete(timeout);
+            // CRITICAL: Re-detect state after restart
+            currentState = await detectScreen();
+            logStep('ensureOnPinLoginScreen', `State after restart from MAIN: ${currentState}`);
         }
 
         // If on auth screen, user needs to authorize first
@@ -462,6 +465,14 @@ async function ensureOnPinLoginScreen(timeout = 20000) {
             logStep('ensureOnPinLoginScreen', 'On PIN_CREATE/CONFIRM, restarting');
             await restart();
             await waitForLoadingToComplete(timeout);
+            // CRITICAL: Re-detect state after restart
+            currentState = await detectScreen();
+            logStep('ensureOnPinLoginScreen', `State after restart from PIN_CREATE/CONFIRM: ${currentState}`);
+            
+            // Check again if we're on AUTH after restart - need to throw error
+            if (currentState === SCREEN_STATE.AUTH) {
+                throw new Error('ensureOnPinLoginScreen: On auth screen after restart. User needs to authorize first.');
+            }
         }
 
         // Wait for PIN login screen
@@ -573,7 +584,7 @@ async function ensureAuthorized(timeout = 20000) {
         // Wait for loading to complete first
         await waitForLoadingToComplete(timeout);
         
-        const currentState = await detectScreen();
+        let currentState = await detectScreen();
         
         if (currentState === SCREEN_STATE.AUTH) {
             return;
@@ -602,6 +613,9 @@ async function ensureAuthorized(timeout = 20000) {
                 await restart();
                 // Wait for loading after restart
                 await waitForLoadingToComplete(timeout);
+                // CRITICAL: Re-detect state after restart
+                currentState = await detectScreen();
+                logStep('ensureAuthorized', `State after restart from MAIN: ${currentState}`);
             }
         }
 
@@ -626,6 +640,9 @@ async function ensureAuthorized(timeout = 20000) {
             await restart();
             // Wait for loading after restart
             await waitForLoadingToComplete(timeout);
+            // CRITICAL: Re-detect state after restart
+            currentState = await detectScreen();
+            logStep('ensureAuthorized', `State after restart from PIN_CREATE/CONFIRM: ${currentState}`);
         }
         
         // If on WebView error screen (BankID API error), click back and restart
@@ -765,23 +782,40 @@ async function setupTestState(targetState, options = {}) {
                     await assertGreeting();
                     await driver.pause(500);
                 } else if (currentState === SCREEN_STATE.MAIN) {
-                    logStep('setupTestState', 'Currently on MAIN, need to set correct PIN');
-                    // Sign out first, then authorize with correct PIN
-                    const menuBtn = getMenuButton();
-                    const isMenuVisible = await menuBtn.isDisplayed().catch(() => false);
-                    if (isMenuVisible) {
-                        logStep('setupTestState', 'Menu visible, signing out');
+                    logStep('setupTestState', 'Currently on MAIN, optimizing setup');
+                    // ОПТИМІЗАЦІЯ: Якщо вже на MAIN, просто перезапустимось і перевіримо PIN
+                    // Це набагато швидше ніж sign out + authorize знову
+                    logStep('setupTestState', 'Restarting from MAIN to check PIN_LOGIN');
+                    await restart();
+                    await waitForLoadingToComplete(timeout);
+                    await driver.pause(1000);
+                    
+                    const stateAfterRestart = await detectScreen();
+                    logStep('setupTestState', `After restart from MAIN, state: ${stateAfterRestart}`);
+                    
+                    if (stateAfterRestart === SCREEN_STATE.PIN_LOGIN) {
+                        // Perfect! We're on PIN_LOGIN, assume PIN is correct
+                        logStep('setupTestState', 'Already on PIN_LOGIN after restart, skipping re-authorization');
+                        return; // Skip the second restart at the end
+                    } else if (stateAfterRestart === SCREEN_STATE.AUTH) {
+                        // Need to authorize with correct PIN
+                        logStep('setupTestState', 'On AUTH after restart, authorizing');
+                        await authorize(pinCode);
+                        await assertGreeting();
+                        await driver.pause(500);
+                    } else if (stateAfterRestart === SCREEN_STATE.MAIN) {
+                        // Still on MAIN - this shouldn't happen after restart, but handle it
+                        logStep('setupTestState', 'Still on MAIN after restart, signing out and re-authorizing');
                         await signOut();
                         await waitForLoadingToComplete(timeout);
+                        // CRITICAL: Ensure we're on AUTH screen before authorize
                         await ensureState(SCREEN_STATE.AUTH, { timeout });
                         await authorize(pinCode);
                         await assertGreeting();
                         await driver.pause(500);
                     } else {
-                        // Menu not visible - restart and authorize
-                        logStep('setupTestState', 'Menu not visible, restarting');
-                        await restart();
-                        await waitForLoadingToComplete(timeout);
+                        // Unknown state - try to get to AUTH and authorize
+                        logStep('setupTestState', 'Unknown state after restart, ensuring AUTH');
                         await ensureState(SCREEN_STATE.AUTH, { timeout });
                         await authorize(pinCode);
                         await assertGreeting();
@@ -814,6 +848,8 @@ async function setupTestState(targetState, options = {}) {
                             logStep('setupTestState', 'Login failed, reauthorizing with correct PIN');
                             await forgotCode();
                             await waitForLoadingToComplete(timeout);
+                            // CRITICAL: Ensure we're on AUTH screen before authorize
+                            await ensureState(SCREEN_STATE.AUTH, { timeout });
                             await authorize(pinCode);
                             await assertGreeting();
                             await driver.pause(500);
@@ -834,11 +870,17 @@ async function setupTestState(targetState, options = {}) {
                     await driver.pause(500);
                 }
                 
-                // Now restart to get to PIN login screen
-                logStep('setupTestState', 'Restarting to get to PIN_LOGIN screen');
-                await restart();
-                await waitForLoadingToComplete(timeout);
-                await ensureState(SCREEN_STATE.PIN_LOGIN, { timeout });
+                // Check if we're already on PIN_LOGIN (from optimized MAIN path)
+                const currentStateBeforeFinalRestart = await detectScreen();
+                if (currentStateBeforeFinalRestart === SCREEN_STATE.PIN_LOGIN) {
+                    logStep('setupTestState', 'Already on PIN_LOGIN, skipping final restart');
+                } else {
+                    // Now restart to get to PIN login screen
+                    logStep('setupTestState', 'Restarting to get to PIN_LOGIN screen');
+                    await restart();
+                    await waitForLoadingToComplete(timeout);
+                    await ensureState(SCREEN_STATE.PIN_LOGIN, { timeout });
+                }
                 logStep('setupTestState', 'Successfully set up PIN_LOGIN state');
                 break;
 
@@ -1282,30 +1324,41 @@ async function authorize(codeDigit) {
 
         const postAuthState = await detectScreen();
         if (postAuthState === SCREEN_STATE.PIN_CREATE) {
+            logStep('authorize', 'On PIN_CREATE screen, entering first PIN');
             await enterPinCode(codeDigit);
 
             // Після введення першого коду очікуємо confirm або MAIN/PIN_LOGIN
+            // enterPinCode вже чекає 2.5 сек, тому просто перевіряємо стан
+            logStep('authorize', 'Waiting for transition after PIN create');
             await driver.waitUntil(
                 async () => {
                     const state = await detectScreen();
+                    logStep('authorize', `Current state after PIN create: ${state}`);
                     return (
                         state === SCREEN_STATE.PIN_CONFIRM ||
                         state === SCREEN_STATE.PIN_LOGIN ||
                         state === SCREEN_STATE.MAIN
                     );
                 },
-                { timeout: 20000, timeoutMsg: 'PIN confirm/login or MAIN screen did not appear after PIN create' }
+                { timeout: 30000, timeoutMsg: 'PIN confirm/login or MAIN screen did not appear after PIN create' }
             );
 
             const afterCreateState = await detectScreen();
+            logStep('authorize', `After PIN create, detected state: ${afterCreateState}`);
             if (afterCreateState === SCREEN_STATE.PIN_CONFIRM) {
+                logStep('authorize', 'On PIN_CONFIRM screen, entering confirmation PIN');
                 await enterPinCode(codeDigit);
             } else if (afterCreateState === SCREEN_STATE.PIN_LOGIN) {
+                logStep('authorize', 'On PIN_LOGIN screen, entering PIN to login');
                 await enterPinCode(codeDigit);
+            } else if (afterCreateState === SCREEN_STATE.MAIN) {
+                logStep('authorize', 'Already on MAIN screen, skipping further PIN entry');
             }
         } else if (postAuthState === SCREEN_STATE.PIN_CONFIRM) {
+            logStep('authorize', 'On PIN_CONFIRM screen, entering confirmation PIN');
             await enterPinCode(codeDigit);
         } else if (postAuthState === SCREEN_STATE.PIN_LOGIN) {
+            logStep('authorize', 'On PIN_LOGIN screen, entering PIN to login');
             await enterPinCode(codeDigit);
         }
     });
@@ -1485,11 +1538,17 @@ async function enterPinCode(codeDigit) {
             { timeout: 15000, timeoutMsg: `PIN button "${codeDigit}" did not appear` }
         );
         
+        logStep('enterPinCode', `Entering PIN code: ${codeDigit}${codeDigit}${codeDigit}${codeDigit}`);
         for (let i = 0; i < 4; i++) {
             await codeButton.click();
-            // Невелика пауза між кліками для стабільності
-            await driver.pause(50);
+            // Збільшена пауза між кліками для надійності
+            await driver.pause(250);
         }
+        
+        // КРИТИЧНО: Чекаємо після введення всіх 4 цифр, щоб застосунок обробив введення
+        // та перейшов на наступний екран (PIN_CONFIRM, PIN_LOGIN або MAIN)
+        logStep('enterPinCode', 'Waiting for app to process PIN code and transition to next screen');
+        await driver.pause(2500);
     });
 }
 
