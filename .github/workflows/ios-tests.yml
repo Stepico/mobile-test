@@ -616,12 +616,17 @@ jobs:
             echo "КРИТИЧНО: Packages були пропатчені в одному або кількох locations - app треба зібрати заново!"
             echo ""
             
-            # Очищаємо app bundle щоб force rebuild
-            rm -rf ../ios-app/DiiaOpenSource.app
+            # КРИТИЧНО: Повертаємось до repo root перед rebuild
+            # (build-app.sh використовує pwd для визначення REPO_ROOT)
+            cd .. || exit 1
+            echo "Working directory для rebuild: $(pwd)"
             
-            # Rebuild
+            # Очищаємо app bundle щоб force rebuild
+            rm -rf ios-app/DiiaOpenSource.app
+            
+            # Rebuild з правильного repo root
             echo "Починаємо rebuild..."
-            bash ../scripts/ios/build-app.sh
+            bash scripts/ios/build-app.sh
             echo "✅ Rebuild завершено з пропатченими packages"
           else
             echo "ℹ️  Rebuild не потрібен - api2oss не знайдено або вже відсутній в packages"
