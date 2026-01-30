@@ -108,10 +108,10 @@ jobs:
           xcodebuild -version
           
           echo "=== Доступні iOS runtimes ==="
-          xcrun simctl list runtimes available | grep -i "ios"
+          xcrun simctl list runtimes available | grep -i "ios" || echo "⚠️  No iOS runtimes found"
           
           echo "=== Доступні iPhone simulators (top 10) ==="
-          xcrun simctl list devices available | grep -i "iphone" | head -10
+          xcrun simctl list devices available | grep -i "iphone" | head -10 || echo "⚠️  No iPhone simulators found"
 
       # ======================================================================
       # КРОК 2: Встановлення залежностей (детермінований)
@@ -293,12 +293,12 @@ jobs:
       - name: Verify Simulator status
         run: |
           echo "Checking Simulator status..."
-          BOOTED=$(xcrun simctl list devices | grep "Booted" || echo "")
+          BOOTED=$(xcrun simctl list devices | grep "Booted" || true)
           
           if [ -z "$BOOTED" ]; then
             echo "❌ No Booted simulator found"
             echo "Available devices:"
-            xcrun simctl list devices
+            xcrun simctl list devices || true
             exit 1
           fi
           
@@ -404,10 +404,15 @@ jobs:
         if: failure()
         run: |
           echo "=== Simulator List ==="
-          xcrun simctl list devices
+          xcrun simctl list devices || true
           echo ""
           echo "=== Booted Simulators ==="
-          xcrun simctl list devices | grep "Booted"
+          BOOTED=$(xcrun simctl list devices | grep "Booted" || true)
+          if [ -z "$BOOTED" ]; then
+            echo "⚠️  No booted simulators found"
+          else
+            echo "$BOOTED"
+          fi
 
       # ======================================================================
       # КРОК 7: Job Summary
