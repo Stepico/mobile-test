@@ -271,6 +271,21 @@ jobs:
                 rm -rf Pods Podfile.lock
                 pod install --repo-update || pod install
                 
+                # Перевірка що Pods успішно встановлено
+                if [ ! -d "Pods" ]; then
+                  echo ""
+                  echo "❌ КРИТИЧНА ПОМИЛКА: pod install failed - Pods директорія не створена!"
+                  echo ""
+                  echo "Можливі причини:"
+                  echo "1. Podfile невалідний"
+                  echo "2. CocoaPods репозиторії недоступні"
+                  echo "3. Incompatible pod versions"
+                  echo ""
+                  echo "Зупиняємо workflow - неможливо продовжити без Pods"
+                  exit 1
+                fi
+                
+                echo "✅ Pods успішно встановлено, починаємо патч..."
                 echo "Повторний патч Pods..."
                 find Pods/ \( -name "*.swift" -o -name "*.m" -o -name "*.h" -o -name "*.strings" -o -name "*.plist" -o -name "*.json" \) \
                   -type f \
@@ -347,10 +362,26 @@ jobs:
               echo "✅ Pods перевірено - api2oss відсутній, залишаємо для збірки"
             fi
           else
-            echo "⚠️  УВАГА: Pods не існує перед збіркою - це може спричинити помилку build"
-            echo "Можливо попередній крок failed. Спробуємо встановити Pods..."
+            echo "❌ КРИТИЧНА ПОМИЛКА: Pods не існує перед збіркою!"
+            echo "Це не повинно статись - Pods мають бути встановлені в попередньому кроці"
+            echo ""
+            echo "Спробуємо встановити Pods як останню спробу..."
             if [ -f "Podfile" ]; then
-              pod install || echo "Failed to install Pods"
+              pod install
+              
+              # Перевірка що встановлення успішне
+              if [ ! -d "Pods" ]; then
+                echo ""
+                echo "❌ FAIL: pod install failed - Pods директорія не створена!"
+                echo "Неможливо продовжити build без dependencies"
+                exit 1
+              fi
+              
+              echo "✅ Pods встановлено успішно"
+            else
+              echo "❌ FAIL: Podfile не знайдено!"
+              echo "Неможливо встановити Pods"
+              exit 1
             fi
           fi
           
