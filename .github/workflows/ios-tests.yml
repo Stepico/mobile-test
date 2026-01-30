@@ -367,7 +367,7 @@ jobs:
             echo ""
             echo "Спробуємо встановити Pods як останню спробу..."
             if [ -f "Podfile" ]; then
-              pod install
+              pod install --repo-update || pod install
               
               # Перевірка що встановлення успішне
               if [ ! -d "Pods" ]; then
