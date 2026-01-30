@@ -17,7 +17,28 @@ BUILD_DIR="${2:-../ios-build}"
 # ============================================================================
 # Якщо BUILD_DIR відносний, конвертуємо в absolute path
 if [[ "$BUILD_DIR" != /* ]]; then
-  BUILD_DIR="$(cd "$(dirname "$BUILD_DIR")" && pwd)/$(basename "$BUILD_DIR")"
+  # Extract parent and base separately for validation
+  PARENT_DIR="$(dirname "$BUILD_DIR")"
+  BASE_NAME="$(basename "$BUILD_DIR")"
+  
+  # Validate parent directory exists (set -e doesn't work in command substitutions!)
+  if [ ! -e "$PARENT_DIR" ]; then
+    echo "❌ ПОМИЛКА: Parent directory не існує: $PARENT_DIR"
+    echo "BUILD_DIR було: $BUILD_DIR"
+    echo "Current directory: $(pwd)"
+    exit 1
+  fi
+  
+  # Convert to absolute (now safe because we validated)
+  if ! cd "$PARENT_DIR" 2>/dev/null; then
+    echo "❌ ПОМИЛКА: Не можу перейти в директорію: $PARENT_DIR"
+    exit 1
+  fi
+  
+  BUILD_DIR="$(pwd)/$BASE_NAME"
+  cd - > /dev/null  # Return to original directory
+  
+  echo "✅ BUILD_DIR converted to absolute: $BUILD_DIR"
 fi
 
 cd "$IOS_SOURCE_DIR"

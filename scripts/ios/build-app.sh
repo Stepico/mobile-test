@@ -122,10 +122,27 @@ cd "$REPO_ROOT"
 mkdir -p "$BUILD_DIR/DerivedData"
 mkdir -p "$OUTPUT_DIR"
 
-# Абсолютні шляхи
-ABS_SOURCE_DIR=$(cd "$IOS_SOURCE_DIR" && pwd)
-ABS_BUILD_DIR=$(cd "$BUILD_DIR" && pwd)
-ABS_OUTPUT_DIR=$(cd "$OUTPUT_DIR" && pwd)
+# Абсолютні шляхи (with validation - set -e doesn't work in command substitutions!)
+if ! cd "$IOS_SOURCE_DIR" 2>/dev/null; then
+  echo "❌ ПОМИЛКА: Не можу перейти в source директорію: $IOS_SOURCE_DIR"
+  exit 1
+fi
+ABS_SOURCE_DIR=$(pwd)
+cd - > /dev/null
+
+if ! cd "$BUILD_DIR" 2>/dev/null; then
+  echo "❌ ПОМИЛКА: Не можу перейти в build директорію: $BUILD_DIR"
+  exit 1
+fi
+ABS_BUILD_DIR=$(pwd)
+cd - > /dev/null
+
+if ! cd "$OUTPUT_DIR" 2>/dev/null; then
+  echo "❌ ПОМИЛКА: Не можу перейти в output директорію: $OUTPUT_DIR"
+  exit 1
+fi
+ABS_OUTPUT_DIR=$(pwd)
+cd - > /dev/null
 
 echo "Building app для iOS Simulator..."
 echo "Source: $ABS_SOURCE_DIR"
