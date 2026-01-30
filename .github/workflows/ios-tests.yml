@@ -368,8 +368,18 @@ jobs:
                     echo "Після патчу залишилось: $PKG_OLD_AFTER входжень"
                     
                     if [ "$PKG_OLD_AFTER" -gt 0 ]; then
-                      echo "⚠️  В packages все ще є api2oss:"
+                      echo ""
+                      echo "❌ КРИТИЧНА ПОМИЛКА: Не вдалося пропатчити pre-build packages!"
+                      echo "Знайдено $PKG_OLD_AFTER входжень api2oss:"
                       grep -r "api2oss" "$PKG_DIR" --include="*.swift" --include="*.m" --include="*.h" 2>/dev/null | head -10 || true
+                      echo ""
+                      echo "Можливі причини:"
+                      echo "1. Package містить api2oss в бінарних файлах"
+                      echo "2. Package містить api2oss в файлах які ми не патчимо"
+                      echo "3. sed не працює для деяких файлів"
+                      echo ""
+                      echo "Зупиняємо workflow - неможливо зібрати app з правильним API"
+                      exit 1
                     else
                       echo "✅ Packages пропатчено"
                     fi
@@ -542,16 +552,21 @@ jobs:
                 
                 if [ "$PKG_OLD_AFTER" -gt 0 ]; then
                   echo ""
-                  echo "❌ FAIL: Не вдалося пропатчити downloaded packages!"
+                  echo "❌ КРИТИЧНА ПОМИЛКА: Не вдалося пропатчити downloaded packages!"
                   echo "Знайдено $PKG_OLD_AFTER входжень api2oss:"
                   grep -r "api2oss" "$SOURCE_PACKAGES" 2>/dev/null | head -20 || true
                   echo ""
-                  echo "⚠️  УВАГА: Downloaded packages містять хардкоджений api2oss!"
-                  echo "Це означає що source repository має api2oss у файлах"
-                  echo "Потрібно виправити в upstream repository або форкнути package"
+                  echo "Можливі причини:"
+                  echo "1. Downloaded packages містять api2oss в бінарних файлах"
+                  echo "2. Upstream repository має хардкоджений api2oss у файлах"
+                  echo "3. sed не працює для деяких файлів"
                   echo ""
-                  echo "КРИТИЧНО: App зібрався з api2oss - тести можуть failed!"
-                  echo "Продовжуємо але app може працювати неправильно..."
+                  echo "Рекомендації:"
+                  echo "- Виправити в upstream repository"
+                  echo "- Або форкнути package і пропатчити там"
+                  echo ""
+                  echo "Зупиняємо workflow - неможливо тестувати app з неправильним API"
+                  exit 1
                 else
                   echo "✅ Downloaded packages пропатчено - api2oss відсутній"
                   # КРИТИЧНО: Помічаємо що потрібен rebuild
@@ -597,8 +612,18 @@ jobs:
                       REBUILD_NEEDED=true
                       echo "🔄 Rebuild буде виконано після перевірки всіх system directories"
                     else
-                      echo "⚠️  В packages все ще є $PKG_OLD_AFTER входжень api2oss"
+                      echo ""
+                      echo "❌ КРИТИЧНА ПОМИЛКА: Не вдалося пропатчити system packages!"
+                      echo "Знайдено $PKG_OLD_AFTER входжень api2oss:"
                       grep -r "api2oss" "$SOURCE_PACKAGES" --include="*.swift" --include="*.m" --include="*.h" 2>/dev/null | head -10 || true
+                      echo ""
+                      echo "Можливі причини:"
+                      echo "1. Downloaded packages містять api2oss в бінарних файлах"
+                      echo "2. Upstream repository має хардкоджений api2oss у файлах"
+                      echo "3. sed не працює для деяких файлів"
+                      echo ""
+                      echo "Зупиняємо workflow - неможливо тестувати app з неправильним API"
+                      exit 1
                     fi
                   fi
                 fi
