@@ -571,7 +571,17 @@ jobs:
                       -exec sed -i '' 's/"api2oss"/"api2s"/g' {} + \
                       -exec sed -i '' "s/'api2oss'/'api2s'/g" {} + \
                       -exec sed -i '' 's/@"api2oss"/@"api2s"/g' {} + 2>/dev/null || true
-                    echo "✅ Пропатчено"
+                    
+                    # КРИТИЧНО: Верифікація після патчу для rebuild logic
+                    PKG_OLD_AFTER=$(grep -r "api2oss" "$SOURCE_PACKAGES" --include="*.swift" --include="*.m" --include="*.h" --include="*.strings" --include="*.plist" --include="*.json" 2>/dev/null | wc -l | tr -d ' ')
+                    echo "Після патчу залишилось: $PKG_OLD_AFTER входжень"
+                    
+                    if [ "$PKG_OLD_AFTER" -eq 0 ]; then
+                      echo "✅ Пропатчено успішно - api2oss відсутній"
+                    else
+                      echo "⚠️  В packages все ще є $PKG_OLD_AFTER входжень api2oss"
+                      grep -r "api2oss" "$SOURCE_PACKAGES" --include="*.swift" --include="*.m" --include="*.h" 2>/dev/null | head -10 || true
+                    fi
                   fi
                 fi
               done
