@@ -186,7 +186,8 @@ PKG_OLD_COUNT=$(grep -r "api2oss" "$SPM_CHECKOUTS" \
   --include="*.m" \
   --include="*.h" \
   --include="*.xcconfig" \
-  2>/dev/null | wc -l | tr -d ' ' || echo "0")
+  2>/dev/null | wc -l | tr -d ' \n' || echo "0")
+PKG_OLD_COUNT=${PKG_OLD_COUNT:-0}  # Default to 0 if empty
 
 echo "Знайдено $PKG_OLD_COUNT входжень api2oss"
 
@@ -235,7 +236,8 @@ PKG_OLD_AFTER=$(grep -r "api2oss" "$SPM_CHECKOUTS" \
   --include="*.m" \
   --include="*.h" \
   --include="*.xcconfig" \
-  2>/dev/null | wc -l | tr -d ' ' || echo "0")
+  2>/dev/null | wc -l | tr -d ' \n' || echo "0")
+PKG_OLD_AFTER=${PKG_OLD_AFTER:-0}  # Default to 0 if empty
 
 if [ "$PKG_OLD_AFTER" -gt 0 ]; then
   echo "❌ КРИТИЧНА ПОМИЛКА: api2oss залишився після патчу!"
@@ -264,7 +266,8 @@ PKG_NEW_COUNT=$(grep -r "api2s" "$SPM_CHECKOUTS" \
   --include="*.swift" \
   --include="*.m" \
   --include="*.h" \
-  2>/dev/null | wc -l | tr -d ' ' || echo "0")
+  2>/dev/null | wc -l | tr -d ' \n' || echo "0")
+PKG_NEW_COUNT=${PKG_NEW_COUNT:-0}  # Default to 0 if empty
 
 echo "✅ Знайдено $PKG_NEW_COUNT входжень api2s в SPM packages"
 
