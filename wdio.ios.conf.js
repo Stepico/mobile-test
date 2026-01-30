@@ -47,6 +47,11 @@ exports.config = {
         // This is useful when BankID API is unavailable in test environment
         ...(process.env.SKIP_AUTH_TESTS === 'true' 
             ? ['./test/specs/iOS/authentication.e2e.js'] 
+            : []),
+        // Skip documents tests if SKIP_DOCS_TESTS env variable is set
+        // This is useful when documents are not available in test environment
+        ...(process.env.SKIP_DOCS_TESTS === 'true' 
+            ? ['./test/specs/iOS/documents.e2e.js'] 
             : [])
     ],
     //
