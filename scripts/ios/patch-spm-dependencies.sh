@@ -28,15 +28,91 @@ echo "Build Dir (absolute): $BUILD_DIR"
 echo ""
 
 # ============================================================================
+# Auto-detect workspace or project
+# ============================================================================
+echo "Пошук iOS workspace/project..."
+
+WORKSPACE_FILE=$(find . -maxdepth 2 -name "*.xcworkspace" -type d | head -1)
+PROJECT_FILE=$(find . -maxdepth 2 -name "*.xcodeproj" -type d | head -1)
+
+if [ -n "$WORKSPACE_FILE" ]; then
+    echo "✅ Знайдено workspace: $WORKSPACE_FILE"
+    BUILD_TYPE="workspace"
+    BUILD_PATH="$WORKSPACE_FILE"
+elif [ -n "$PROJECT_FILE" ]; then
+    echo "✅ Знайдено project: $PROJECT_FILE"
+    BUILD_TYPE="project"
+    BUILD_PATH="$PROJECT_FILE"
+else
+    echo "❌ Не знайдено .xcworkspace або .xcodeproj файлів"
+    echo "Знайдені файли в $(pwd):"
+    ls -la
+    exit 1
+fi
+
+# Auto-detect scheme
+echo "Визначаємо доступні schemes..."
+if [ "$BUILD_TYPE" = "workspace" ]; then
+    SCHEMES=$(xcodebuild -workspace "$BUILD_PATH" -list -json 2>/dev/null | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+schemes = data.get('workspace', {}).get('schemes', [])
+print('\n'.join(schemes))
+" || echo "")
+else
+    SCHEMES=$(xcodebuild -project "$BUILD_PATH" -list -json 2>/dev/null | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+schemes = data.get('project', {}).get('schemes', [])
+print('\n'.join(schemes))
+" || echo "")
+fi
+
+if [ -z "$SCHEMES" ]; then
+    echo "⚠️  Не вдалось визначити schemes, використовуємо перший доступний"
+    SCHEME=""
+else
+    # Беремо перший scheme (зазвичай це main scheme)
+    SCHEME=$(echo "$SCHEMES" | head -1)
+    echo "✅ Використовуємо scheme: $SCHEME"
+fi
+
+# Якщо scheme не визначено, спробуємо без нього
+if [ -z "$SCHEME" ]; then
+    echo "⚠️  Scheme не визначено, xcodebuild може не спрацювати"
+fi
+
+echo ""
+
+# ============================================================================
 # КРОК 1: Resolve SPM dependencies
 # ============================================================================
 echo "КРОК 1: Resolve SPM dependencies (download з GitHub)..."
 
 # FIX Bug 2: Use PIPESTATUS to capture xcodebuild exit code with tee
-xcodebuild -resolvePackageDependencies \
-  -workspace DiiaOpenSource.xcworkspace \
-  -scheme DiiaOpenSource \
-  -configuration Debug 2>&1 | tee /tmp/resolve.log
+if [ "$BUILD_TYPE" = "workspace" ]; then
+    if [ -n "$SCHEME" ]; then
+        xcodebuild -resolvePackageDependencies \
+          -workspace "$BUILD_PATH" \
+          -scheme "$SCHEME" \
+          -configuration Debug 2>&1 | tee /tmp/resolve.log
+    else
+        xcodebuild -resolvePackageDependencies \
+          -workspace "$BUILD_PATH" \
+          -configuration Debug 2>&1 | tee /tmp/resolve.log
+    fi
+else
+    if [ -n "$SCHEME" ]; then
+        xcodebuild -resolvePackageDependencies \
+          -project "$BUILD_PATH" \
+          -scheme "$SCHEME" \
+          -configuration Debug 2>&1 | tee /tmp/resolve.log
+    else
+        xcodebuild -resolvePackageDependencies \
+          -project "$BUILD_PATH" \
+          -configuration Debug 2>&1 | tee /tmp/resolve.log
+    fi
+fi
   
 # Check xcodebuild exit code (pipe status)
 if [ "${PIPESTATUS[0]}" -ne 0 ]; then
