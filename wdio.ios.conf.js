@@ -1,24 +1,16 @@
 const path = require('path');
 const fs = require('fs');
 
-// Визначаємо шлях до app bundle
-// Пріоритет: IOS_APP_PATH env var > workspace relative path
 const iosAppPath = process.env.IOS_APP_PATH ||
     path.join(__dirname, 'ios-app', 'DiiaOpenSource.app');
 const iosBundleId = process.env.IOS_BUNDLE_ID || 'ua.gov.diia.opensource.app';
 const iosDeviceName = process.env.IOS_DEVICE_NAME || 'iPhone 16 Pro';
-// Локально використовуємо 18.2 (типово є в Xcode); в CI задається IOS_PLATFORM_VERSION (наприклад 18.5)
 const iosPlatformVersion = process.env.IOS_PLATFORM_VERSION || '18.2';
 
-// Перевірка існування app bundle з детальним повідомленням
 if (!fs.existsSync(iosAppPath)) {
-    const resolvedPath = path.resolve(iosAppPath);
-    const workspacePath = process.env.GITHUB_WORKSPACE || __dirname;
     throw new Error(
-        `iOS app not found at "${resolvedPath}".\n` +
-        `Workspace: ${workspacePath}\n` +
-        `Set IOS_APP_PATH environment variable or ensure app is built to ./ios-app/DiiaOpenSource.app\n` +
-        `In CI, run: bash scripts/ios/build-app.sh`
+        `iOS app not found.\n` +
+        `Set IOS_APP_PATH or build the app (e.g. bash scripts/ios/build-app.sh).`
     );
 }
 
@@ -29,38 +21,20 @@ function ensureDir(dir) {
 }
 
 exports.config = {
-    //
-    // ====================
-    // Runner Configuration
-    // ====================
     runner: 'local',
     port: 4723,
-    //
-    // ==================
-    // Specify Test Files
-    // ==================
     specs: [
         './test/specs/iOS/**/*.js'
     ],
     exclude: [
-        // Skip authentication tests if SKIP_AUTH_TESTS env variable is set
-        // This is useful when BankID API is unavailable in test environment
         ...(process.env.SKIP_AUTH_TESTS === 'true' 
             ? ['./test/specs/iOS/authentication.e2e.js'] 
             : []),
-        // Skip documents tests if SKIP_DOCS_TESTS env variable is set
-        // This is useful when documents are not available in test environment
         ...(process.env.SKIP_DOCS_TESTS === 'true' 
             ? ['./test/specs/iOS/documents.e2e.js'] 
             : [])
     ],
-    //
-    // Limit parallel test execution
-    // In CI: Run 1 at a time to avoid overloading (large app)
-    // Locally: Can run 1 at a time for stability
     maxInstances: 1,
-    //
-    // iOS capabilities
     capabilities: [{
         platformName: 'iOS',
         'appium:deviceName': iosDeviceName,
@@ -69,42 +43,26 @@ exports.config = {
         'appium:automationName': 'XCUITest',
         'appium:app': path.resolve(iosAppPath),
         'appium:bundleId': iosBundleId,
-        // In CI: Use noReset to skip reinstall if app already installed (faster)
-        // Locally: Keep noReset false for fresh install each time
         'appium:noReset': process.env.CI ? true : false,
         'appium:fullReset': false,
-        
-        // WebDriverAgent timeouts (increased for large app in CI)
-        'appium:wdaLaunchTimeout': process.env.CI ? 300000 : 120000, // 5 min CI, 2 min local
-        'appium:wdaConnectionTimeout': 180000, // 3 minutes to establish connection
+        'appium:wdaLaunchTimeout': process.env.CI ? 300000 : 120000,
+        'appium:wdaConnectionTimeout': 180000,
         'appium:wdaStartupRetries': 4,
         'appium:wdaStartupRetryInterval': 20000,
-        
-        // Command timeouts
-        'appium:newCommandTimeout': 1800, // 30 minutes timeout for long-running tests
-        
-        // Installation and launch optimizations
-        'appium:iosInstallPause': 8000, // 8 second pause after app install
+        'appium:newCommandTimeout': 1800,
+        'appium:iosInstallPause': 8000,
         'appium:autoAcceptAlerts': true,
-        'appium:shouldTerminateApp': false, // Keep app running between tests
-        
-        // Logging
-        'appium:showXcodeLog': !process.env.CI, // Disable verbose logs in CI
-        'appium:skipLogCapture': process.env.CI, // Skip log capture in CI for performance
+        'appium:shouldTerminateApp': false,
+        'appium:showXcodeLog': !process.env.CI,
+        'appium:skipLogCapture': process.env.CI,
         'appium:useSimpleBuildTest': true
     }],
 
-    //
-    // ===================
-    // Test Configurations
-    // ===================
     logLevel: 'info',
     bail: 0,
-    // Increased for CI (simulator slower after running 8+ tests)
-    waitforTimeout: process.env.CI ? 20000 : 10000,  // 20s in CI, 10s locally
-    // Increased timeouts for large app (111MB) installation and launch
-    connectionRetryTimeout: process.env.CI ? 600000 : 120000, // 10 minutes CI, 2 minutes local
-    connectionRetryCount: 3, // Try 3 times before giving up
+    waitforTimeout: process.env.CI ? 20000 : 10000,
+    connectionRetryTimeout: process.env.CI ? 600000 : 120000,
+    connectionRetryCount: 3,
     services: ['appium'],
     framework: 'mocha',
     reporters: ['spec'],
@@ -116,15 +74,13 @@ exports.config = {
 
     afterTest: async function (test, context, { passed }) {
         if (!passed) {
-            // Replace unsafe characters: spaces, quotes, parentheses, slashes, etc.
-            // GitHub Actions artifacts don't allow: " \ / : * ? < > |
             const safeName = test.title
-                .replace(/\s+/g, '_')           // spaces to underscore
-                .replace(/["'`]/g, '')          // remove quotes
-                .replace(/[\\/:*?<>|]/g, '_')   // replace unsafe chars
-                .replace(/[()[\]{}]/g, '_')     // replace brackets
-                .replace(/_+/g, '_')            // collapse multiple underscores
-                .replace(/^_|_$/g, '');         // trim underscores
+                .replace(/\s+/g, '_')
+                .replace(/["'`]/g, '')
+                .replace(/[\\/:*?<>|]/g, '_')
+                .replace(/[()[\]{}]/g, '_')
+                .replace(/_+/g, '_')
+                .replace(/^_|_$/g, '');
             const timestamp = Date.now();
 
             const screenshotPath = `./artifacts/screenshots/${safeName}-${timestamp}.png`;
@@ -139,7 +95,6 @@ exports.config = {
 
     mochaOpts: {
         ui: 'bdd',
-        // Перший прохід авторизації іноді триває довше (BankID + PIN)
         timeout: 180000
     },
 }

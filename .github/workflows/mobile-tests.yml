@@ -45,13 +45,11 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
           script: |
-            # wait until emulator fully boots
+
             timeout 300 sh -c 'until adb shell getprop sys.boot_completed | grep -m 1 1; do sleep 5; done'
 
-            # install APK
             adb install -r app/diia-debug.apk
 
-            # run tests — Appium service in WDIO will handle starting/killing Appium
             npx wdio run wdio.conf.js
 
       - name: Upload screenshots on failure

@@ -6,19 +6,13 @@ PLATFORM_VERSION="${IOS_PLATFORM_VERSION:-18.5}"
 OPEN_SIMULATOR="${OPEN_SIMULATOR:-false}"
 
 echo "=== Boot iOS Simulator ==="
-echo "Шукаємо пристрій: $DEVICE_NAME (iOS $PLATFORM_VERSION)"
 
-# Визначаємо runtime identifier (iOS-<major>-<minor>)
 MAJOR_VERSION=$(echo "$PLATFORM_VERSION" | cut -d. -f1)
 MINOR_VERSION=$(echo "$PLATFORM_VERSION" | cut -d. -f2)
 RUNTIME_ID="iOS-${MAJOR_VERSION}-${MINOR_VERSION}"
 
-echo "Шукаємо runtime: $RUNTIME_ID"
-
-# Отримуємо список доступних runtimes
 AVAILABLE_RUNTIMES=$(xcrun simctl list runtimes available -j 2>/dev/null || echo "{}")
 
-# Перевіряємо чи потрібний runtime доступний
 RUNTIME_AVAILABLE=$(echo "$AVAILABLE_RUNTIMES" | python3 -c "
 import sys, json
 try:
@@ -32,37 +26,31 @@ except:
     print('false')
 " 2>/dev/null || echo "false")
 
-# Отримуємо список доступних simulators
 AVAILABLE_DEVICES=$(xcrun simctl list devices available -j 2>/dev/null || echo "{}")
 
-# Шукаємо UDID для потрібного пристрою з точним runtime
 DEVICE_UDID=$(echo "$AVAILABLE_DEVICES" | python3 -c "
 import sys, json
 try:
     data = json.load(sys.stdin)
     target_name = '$DEVICE_NAME'
     target_runtime = '$RUNTIME_ID'
-    
-    # Спочатку шукаємо точний match
+
     for runtime_id, devices in data.get('devices', {}).items():
         if target_runtime in runtime_id:
             for device in devices:
                 if device.get('name') == target_name and device.get('isAvailable', False):
                     print(device['udid'])
                     sys.exit(0)
-    
-    # Якщо не знайдено, виходимо без результату
+
     print('')
 except Exception as e:
     print('')
 " 2>/dev/null || echo "")
 
-# Якщо не знайдено точний match, спробуємо створити device
 if [ -z "$DEVICE_UDID" ]; then
-    echo "⚠️  Device '$DEVICE_NAME' з iOS $PLATFORM_VERSION не знайдено"
-    echo "Спробуємо створити новий device..."
-    
-    # Знаходимо точний runtime identifier
+    echo "⚠️  Device '$DEVICE_NAME' with iOS $PLATFORM_VERSION not found"
+    echo "Trying to create new device..."
+
     RUNTIME_IDENTIFIER=$(xcrun simctl list runtimes available -j 2>/dev/null | python3 -c "
 import sys, json
 try:
@@ -78,19 +66,18 @@ except:
 " 2>/dev/null || echo "")
     
     if [ -n "$RUNTIME_IDENTIFIER" ]; then
-        echo "Створюємо device: $DEVICE_NAME з runtime $RUNTIME_IDENTIFIER"
+        echo "Creating device: $DEVICE_NAME with runtime $RUNTIME_IDENTIFIER"
         DEVICE_UDID=$(xcrun simctl create "$DEVICE_NAME" com.apple.CoreSimulator.SimDeviceType."$(echo "$DEVICE_NAME" | sed 's/ /-/g')" "$RUNTIME_IDENTIFIER" 2>/dev/null || echo "")
         
         if [ -n "$DEVICE_UDID" ]; then
-            echo "✅ Device створено з UDID: $DEVICE_UDID"
+            echo "✅ Device created with UDID: $DEVICE_UDID"
         else
-            echo "⚠️  Не вдалося створити device, використовуємо fallback..."
+            echo "⚠️  Failed to create device, using fallback..."
         fi
     fi
-    
-    # Якщо створення не вдалося, fallback на найближчий доступний iPhone
+
     if [ -z "$DEVICE_UDID" ]; then
-        echo "Fallback: шукаємо найближчий доступний iPhone..."
+        echo "Fallback: searching for nearest available iPhone..."
         DEVICE_UDID=$(echo "$AVAILABLE_DEVICES" | python3 -c "
 import sys, json
 try:
@@ -124,17 +111,16 @@ except Exception:
 " 2>/dev/null || echo "")
         
         if [ -z "$DEVICE_UDID" ]; then
-            echo "❌ Не знайдено жодного доступного iPhone simulator"
-            echo "Доступні пристрої:"
+            echo "❌ No available iPhone simulator found"
+            echo "Available devices:"
             xcrun simctl list devices available | grep -i "iphone" | head -10
             exit 1
         fi
     fi
 fi
 
-echo "✅ Знайдено пристрій UDID: $DEVICE_UDID"
+echo "✅ Found device UDID: $DEVICE_UDID"
 
-# Отримуємо поточний стан пристрою
 DEVICE_INFO=$(xcrun simctl list devices -j 2>/dev/null | python3 -c "
 import sys, json
 try:
@@ -152,43 +138,33 @@ except:
     print('unknown: unknown')
 " 2>/dev/null || echo "unknown: unknown")
 
-echo "Поточний стан: $DEVICE_INFO"
-
-# Зупиняємо всі вже запущені симулятори (опціонально, для детермінізму)
 if [ "${SHUTDOWN_OTHER_SIMS:-false}" = "true" ]; then
-    echo "Зупиняємо інші запущені симулятори..."
+    echo "Shutting down other running simulators..."
     xcrun simctl shutdown all 2>/dev/null || true
 fi
 
-# Boot пристрою
-echo "Запускаємо simulator..."
+echo "Starting simulator..."
 xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
 
-# Відкриваємо Simulator.app якщо потрібно
 if [ "$OPEN_SIMULATOR" = "true" ]; then
-    echo "Відкриваємо Simulator.app..."
+    echo "Opening Simulator.app..."
     open -a Simulator 2>/dev/null || true
 fi
 
-# Чекаємо поки simulator завантажиться
-echo "Очікуємо завантаження simulator..."
+echo "Waiting for simulator to boot..."
 xcrun simctl bootstatus "$DEVICE_UDID" -b || {
-    echo "⚠️ bootstatus не завершився, але продовжуємо..."
+    echo "⚠️ bootstatus did not complete, continuing..."
 }
 
-# Перевіряємо фінальний статус
 FINAL_STATE=$(xcrun simctl list devices | grep "$DEVICE_UDID" | grep -o "Booted" || echo "")
 if [ -n "$FINAL_STATE" ]; then
-    echo "✅ Simulator успішно запущено"
+    echo "✅ Simulator started successfully"
 else
-    echo "⚠️ Simulator може бути не повністю завантажений, але продовжуємо..."
+    echo "⚠️ Simulator may not be fully loaded, continuing..."
 fi
 
-# Експортуємо UDID для використання в тестах
 export IOS_DEVICE_UDID="$DEVICE_UDID"
-echo "Експортовано: IOS_DEVICE_UDID=$DEVICE_UDID"
 
-# У CI — записуємо UDID у GITHUB_OUTPUT, щоб тести використовували саме запущений симулятор
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
     echo "udid=$DEVICE_UDID" >> "$GITHUB_OUTPUT"
 fi

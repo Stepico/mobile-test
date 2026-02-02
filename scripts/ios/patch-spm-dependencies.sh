@@ -1,78 +1,50 @@
 #!/bin/bash
 set -euo pipefail
 
-# ============================================================================
-# Patch Swift Package Manager Dependencies: api2oss → api2s
-# ============================================================================
-# Патчить downloaded SPM packages після resolve, але ПЕРЕД build
-# Гарантує що всі SPM dependencies (ios-network, ios-authorization, etc.)
-# використовують правильний API URL
-# ============================================================================
-
 IOS_SOURCE_DIR="${1:-.}"
 BUILD_DIR="${2:-../ios-build}"
 
-# ============================================================================
-# FIX Bug 1: Convert BUILD_DIR to absolute path BEFORE cd
-# ============================================================================
-# Якщо BUILD_DIR відносний, конвертуємо в absolute path
 if [[ "$BUILD_DIR" != /* ]]; then
-  # Extract parent and base separately for validation
+
   PARENT_DIR="$(dirname "$BUILD_DIR")"
   BASE_NAME="$(basename "$BUILD_DIR")"
-  
-  # Validate parent directory exists (set -e doesn't work in command substitutions!)
+
   if [ ! -e "$PARENT_DIR" ]; then
-    echo "❌ ПОМИЛКА: Parent directory не існує: $PARENT_DIR"
-    echo "BUILD_DIR було: $BUILD_DIR"
+    echo "❌ ERROR: Parent directory does not exist: $PARENT_DIR"
+    echo "BUILD_DIR was: $BUILD_DIR"
     echo "Current directory: $(pwd)"
     exit 1
   fi
-  
-  # Convert to absolute (now safe because we validated)
+
   if ! cd "$PARENT_DIR" 2>/dev/null; then
-    echo "❌ ПОМИЛКА: Не можу перейти в директорію: $PARENT_DIR"
+    echo "❌ ERROR: Cannot cd to directory: $PARENT_DIR"
     exit 1
   fi
   
   BUILD_DIR="$(pwd)/$BASE_NAME"
-  cd - > /dev/null  # Return to original directory
-  
-  echo "✅ BUILD_DIR converted to absolute: $BUILD_DIR"
+  cd - > /dev/null
 fi
 
 cd "$IOS_SOURCE_DIR"
 
-echo "=== Патч Swift Package Dependencies: api2oss → api2s ==="
-echo "iOS Source: $(pwd)"
-echo "Build Dir (absolute): $BUILD_DIR"
-echo ""
-
-# ============================================================================
-# Auto-detect workspace or project
-# ============================================================================
-echo "Пошук iOS workspace/project..."
+echo "=== Patch SPM: api2oss → api2s ==="
 
 WORKSPACE_FILE=$(find . -maxdepth 2 -name "*.xcworkspace" -type d | head -1)
 PROJECT_FILE=$(find . -maxdepth 2 -name "*.xcodeproj" -type d | head -1)
 
 if [ -n "$WORKSPACE_FILE" ]; then
-    echo "✅ Знайдено workspace: $WORKSPACE_FILE"
     BUILD_TYPE="workspace"
     BUILD_PATH="$WORKSPACE_FILE"
 elif [ -n "$PROJECT_FILE" ]; then
-    echo "✅ Знайдено project: $PROJECT_FILE"
     BUILD_TYPE="project"
     BUILD_PATH="$PROJECT_FILE"
 else
-    echo "❌ Не знайдено .xcworkspace або .xcodeproj файлів"
-    echo "Знайдені файли в $(pwd):"
+    echo "❌ No .xcworkspace or .xcodeproj found"
+    echo "Files in $(pwd):"
     ls -la
     exit 1
 fi
 
-# Auto-detect scheme
-echo "Визначаємо доступні schemes..."
 if [ "$BUILD_TYPE" = "workspace" ]; then
     SCHEMES=$(xcodebuild -workspace "$BUILD_PATH" -list -json 2>/dev/null | python3 -c "
 import sys, json
@@ -89,28 +61,10 @@ print('\n'.join(schemes))
 " || echo "")
 fi
 
-if [ -z "$SCHEMES" ]; then
-    echo "⚠️  Не вдалось визначити schemes, використовуємо перший доступний"
-    SCHEME=""
-else
-    # Беремо перший scheme (зазвичай це main scheme)
-    SCHEME=$(echo "$SCHEMES" | head -1)
-    echo "✅ Використовуємо scheme: $SCHEME"
-fi
+SCHEME=$(echo "$SCHEMES" | head -1)
 
-# Якщо scheme не визначено, спробуємо без нього
-if [ -z "$SCHEME" ]; then
-    echo "⚠️  Scheme не визначено, xcodebuild може не спрацювати"
-fi
+echo "Step 1: Resolve SPM..."
 
-echo ""
-
-# ============================================================================
-# КРОК 1: Resolve SPM dependencies
-# ============================================================================
-echo "КРОК 1: Resolve SPM dependencies (download з GitHub)..."
-
-# FIX Bug 2: Use PIPESTATUS to capture xcodebuild exit code with tee
 if [ "$BUILD_TYPE" = "workspace" ]; then
     if [ -n "$SCHEME" ]; then
         xcodebuild -resolvePackageDependencies \
@@ -134,52 +88,27 @@ else
           -configuration Debug 2>&1 | tee /tmp/resolve.log
     fi
 fi
-  
-# Check xcodebuild exit code (pipe status)
+
 if [ "${PIPESTATUS[0]}" -ne 0 ]; then
-  echo "❌ Package resolve failed (exit code: ${PIPESTATUS[0]})"
-  echo ""
-  echo "=== Останні 50 рядків логу ==="
+  echo "❌ Package resolve failed"
   tail -50 /tmp/resolve.log
   exit 1
 fi
 
-echo "✅ SPM dependencies resolved"
-echo ""
+echo "Step 2: Find SPM packages..."
 
-# ============================================================================
-# КРОК 2: Пошук downloaded SPM packages
-# ============================================================================
-echo "КРОК 2: Пошук downloaded SPM packages..."
-
-# Primary: isolated DerivedData в build директорії
 SPM_CHECKOUTS="$BUILD_DIR/DerivedData/SourcePackages/checkouts"
 
 if [ ! -d "$SPM_CHECKOUTS" ]; then
-  echo "⚠️  SPM checkouts не знайдено в isolated build dir: $SPM_CHECKOUTS"
-  echo "Перевіряємо system DerivedData..."
-  
-  # Fallback: system DerivedData
   SYSTEM_DD=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "SourcePackages" -maxdepth 2 2>/dev/null | head -1 || echo "")
-  
   if [ -n "$SYSTEM_DD" ]; then
     SPM_CHECKOUTS="$SYSTEM_DD/checkouts"
-    echo "✅ Знайдено в system DerivedData: $SPM_CHECKOUTS"
   else
-    echo "❌ SPM packages не знайдено - можливо проект не використовує SPM"
-    echo "Пропускаємо патч"
     exit 0
   fi
-else
-  echo "✅ SPM packages знайдено: $SPM_CHECKOUTS"
 fi
 
-echo ""
-
-# ============================================================================
-# КРОК 3: Підрахунок api2oss ПЕРЕД патчем
-# ============================================================================
-echo "КРОК 3: Аналіз api2oss в SPM packages (перед патчем)..."
+echo "Step 3: Analyze api2oss..."
 
 PKG_OLD_COUNT=$(grep -r "api2oss" "$SPM_CHECKOUTS" \
   --include="*.swift" \
@@ -187,34 +116,13 @@ PKG_OLD_COUNT=$(grep -r "api2oss" "$SPM_CHECKOUTS" \
   --include="*.h" \
   --include="*.xcconfig" \
   2>/dev/null | wc -l | tr -d ' \n' || echo "0")
-PKG_OLD_COUNT=${PKG_OLD_COUNT:-0}  # Default to 0 if empty
-
-echo "Знайдено $PKG_OLD_COUNT входжень api2oss"
+PKG_OLD_COUNT=${PKG_OLD_COUNT:-0}
 
 if [ "$PKG_OLD_COUNT" -eq 0 ]; then
-  echo "✅ SPM packages вже чисті - api2oss відсутній"
-  echo "Патч не потрібен"
   exit 0
 fi
 
-echo ""
-echo "Файли з api2oss (перші 5):"
-grep -rl "api2oss" "$SPM_CHECKOUTS" \
-  --include="*.swift" \
-  --include="*.m" \
-  --include="*.h" \
-  2>/dev/null | head -5 || true
-echo ""
-
-# ============================================================================
-# КРОК 4: Патч api2oss → api2s
-# ============================================================================
-echo "КРОК 4: Патчимо api2oss → api2s в SPM packages..."
-
-# Патчимо всі форми api2oss:
-# 1. api2oss.diia.gov.ua → api2s.diia.gov.ua (full URL)
-# 2. "api2oss" → "api2s" (string literals)
-# 3. 'api2oss' → 'api2s' (char literals)
+echo "Step 4: Patch SPM..."
 
 find "$SPM_CHECKOUTS" \
   \( -name "*.swift" -o -name "*.m" -o -name "*.h" -o -name "*.xcconfig" \) \
@@ -223,13 +131,7 @@ find "$SPM_CHECKOUTS" \
   -exec sed -i '' 's/"api2oss"/"api2s"/g' {} + \
   -exec sed -i '' "s/'api2oss'/'api2s'/g" {} + 2>/dev/null || true
 
-echo "✅ Патч застосовано"
-echo ""
-
-# ============================================================================
-# КРОК 5: Верифікація (КРИТИЧНО)
-# ============================================================================
-echo "КРОК 5: Верифікація - перевірка що api2oss відсутній..."
+echo "Step 5: Verify..."
 
 PKG_OLD_AFTER=$(grep -r "api2oss" "$SPM_CHECKOUTS" \
   --include="*.swift" \
@@ -240,8 +142,8 @@ PKG_OLD_AFTER=$(grep -r "api2oss" "$SPM_CHECKOUTS" \
 PKG_OLD_AFTER=${PKG_OLD_AFTER:-0}  # Default to 0 if empty
 
 if [ "$PKG_OLD_AFTER" -gt 0 ]; then
-  echo "❌ КРИТИЧНА ПОМИЛКА: api2oss залишився після патчу!"
-  echo "Залишилось $PKG_OLD_AFTER входжень:"
+  echo "❌ CRITICAL: api2oss still present after patch!"
+  echo "Remaining $PKG_OLD_AFTER occurrences:"
   echo ""
   grep -r "api2oss" "$SPM_CHECKOUTS" \
     --include="*.swift" \
@@ -249,35 +151,12 @@ if [ "$PKG_OLD_AFTER" -gt 0 ]; then
     --include="*.h" \
     2>/dev/null | head -10 || true
   echo ""
-  echo "⚠️  App зберется з НЕПРАВИЛЬНИМ API URL!"
-  echo "⚠️  BankID авторизація НЕ ПРАЦЮВАТИМЕ!"
+  echo "⚠️  App will build with WRONG API URL!"
+  echo "⚠️  BankID authorization will NOT work!"
   exit 1
 fi
 
-echo "✅ Верифікація пройдена - api2oss відсутній у SPM packages"
+echo "✅ Verification passed - api2oss absent in SPM packages"
 echo ""
 
-# ============================================================================
-# КРОК 6: Підтвердження нового URL
-# ============================================================================
-echo "КРОК 6: Підтвердження - перевірка api2s..."
-
-PKG_NEW_COUNT=$(grep -r "api2s" "$SPM_CHECKOUTS" \
-  --include="*.swift" \
-  --include="*.m" \
-  --include="*.h" \
-  2>/dev/null | wc -l | tr -d ' \n' || echo "0")
-PKG_NEW_COUNT=${PKG_NEW_COUNT:-0}  # Default to 0 if empty
-
-echo "✅ Знайдено $PKG_NEW_COUNT входжень api2s в SPM packages"
-
-if [ "$PKG_NEW_COUNT" -gt 0 ]; then
-  echo "Приклади (перші 3):"
-  grep -r "api2s" "$SPM_CHECKOUTS" \
-    --include="*.swift" \
-    2>/dev/null | head -3 || true
-fi
-
-echo ""
-echo "=== ✅ SPM Dependencies пропатчено успішно ==="
-echo "App зберется з правильним API URL: api2s.diia.gov.ua"
+echo "✅ SPM patch done"

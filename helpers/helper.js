@@ -1,7 +1,5 @@
 const { driver } = require('@wdio/globals')
 
-// SELECTOR OPTIONS
-
 export function getElementByText(text) {
     return $(`android=new UiSelector().text("${text}")`);
 }
@@ -9,8 +7,6 @@ export function getElementByText(text) {
 export function getElementByAccessibilityId(accessibilityId) {
     return driver.$(`~${accessibilityId}`);
 }
-
-// FLOWS
 
 export async function authorize(codeDigit) {
     const loginWithNBU = getElementByText('BankID HБУ');
@@ -75,8 +71,6 @@ export async function enterPinCode(codeDigit) {
     }
 }
 
-// ASSERTIONS
-
 export async function assertGreeting() {
     const greeting = getElementByAccessibilityId('Привіт, Віктор 👋');
     await expect(greeting).toBeDisplayed();
@@ -93,8 +87,6 @@ export async function assertPopup(title = '', msg = '') {
         await expect(popupMsg).toBeDisplayed();
     }
 }
-
-// OTHER
 
 export async function scrollUntilVisible(selector, maxSwipes = 10) {
     for (let i = 0; i < maxSwipes; i++) {

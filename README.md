@@ -63,3 +63,70 @@ Part 3 - Run tests locally
     21.1 Add a variable with Name: ANDROID_HOME and Value: <value_from_step_19.3_without_platform_tools>
     21.2 Add a variable with Name: ANDROID_SDK_ROOT and Value: <value_from_step_19.3_without_platform_tools>
     21.3 Restart terminal
+
+---
+
+## iOS
+
+Part 1 - Run the app locally
+
+1. Go to https://github.com/diia-open-source/ios-diia
+2. Clone the repository above to your device
+3. Open the project folder in Xcode or any other text editor
+4. Install Xcode (e.g. `/Applications/Xcode.app`) if not installed
+5. Point the active developer directory to Xcode:
+   ```bash
+   sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+   ```
+6. Accept Xcode license:
+   ```bash
+   sudo xcodebuild -license accept
+   ```
+7. (Optional) Install CocoaPods for the iOS app project:
+   ```bash
+   brew install cocoapods
+   # or: sudo gem install cocoapods
+   ```
+8. Open the project in Xcode and create a simulator (Window → Devices and Simulators → Simulators) if there is none
+   *Note* Testing occurred on iPhone simulator (e.g. iPhone 16, iOS 18.x)
+9. Wait for the project to build and run it (Product → Run or ⌘R)
+
+Expected result at the end of Part 1 - The app is opening in the iOS Simulator
+
+Part 2 - Set up auto-test framework
+
+10. Verify Node
+    node -v
+    npm -v
+    *Note* In case there is none → install latest versions
+11. Verify Xcode
+    xcodebuild -version
+    xcrun simctl list devices available
+    *Note* In case Xcode or simulators are not available, complete Part 1 steps 4–6
+12. Install test framework and its driver using
+    npm install -g appium
+    appium driver install xcuitest
+    *Note* If the second command reports that "xcuitest" is already installed, no need to run it again. List installed drivers with: appium driver list --installed
+13. Clone this repository to your device
+14. Install project dependencies
+    npm install
+15. [NOT NEEDED] Initialize Node project
+    npm init -y
+16. [NOT NEEDED] Install test runner
+    npm install webdriverio @wdio/cli --save-dev
+17. [NOT NEEDED] Initialize webdriver
+    npx wdio config
+18. Ensure the iOS app is built (see Part 1)
+
+Part 3 - Run tests locally
+
+19. Make sure Appium server is running
+    appium
+20. In another terminal, prepare the app and simulator, then run tests:
+    bash scripts/ios/ensure-appium.sh
+    bash scripts/ios/setup-app.sh
+    bash scripts/ios/boot-sim.sh
+    npx wdio run wdio.ios.conf.js
+    Or run everything in one go:
+    bash scripts/ios/run-tests.sh
+21. *Note* Bundle ID used for the app: `ua.gov.diia.opensource.app`
