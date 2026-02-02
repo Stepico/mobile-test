@@ -56,8 +56,8 @@ jobs:
       CI: true
       NODE_ENV: test
 
-      # Skip auth tests in CI — BankID API returns 404 in test environment
-      SKIP_AUTH_TESTS: 'true'
+      # Run all iOS specs (auth + documents). If BankID 404 in CI, set SKIP_AUTH_TESTS: 'true'
+      # SKIP_AUTH_TESTS: 'true'
 
       APPIUM_LOG_LEVEL: info
 
