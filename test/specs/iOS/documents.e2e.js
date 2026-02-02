@@ -16,6 +16,7 @@ const {
 } = require(path.resolve(__dirname, '../../../helpers/helper-iOS.js'));
 
 describe('Docs test suite', () => {
+    // Test-case #2.1
     it('user should be able to observe driver license document', async () => {
         await authorize('0');
     
