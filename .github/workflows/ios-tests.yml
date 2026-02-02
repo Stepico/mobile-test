@@ -281,6 +281,7 @@ jobs:
           echo "=== Запуск тестів ==="
           npm run test:ios:ci
         env:
+          CI: 'true'  # CRITICAL: Enable CI-specific timeouts (Bug 2 fix!)
           IOS_APP_PATH: ./ios-app/DiiaOpenSource.app
           IOS_DEVICE_UDID: ${{ steps.boot-sim.outputs.udid }}
           # SKIP_DOCS_TESTS: 'true'  # Uncomment to skip documents tests if needed
