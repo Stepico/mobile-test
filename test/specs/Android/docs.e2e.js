@@ -1,18 +1,16 @@
-const { driver, expect } = require('@wdio/globals');
+const { expect } = require('@wdio/globals');
 
 const { 
     getElementByText,
     getElementByAccessibilityId,
     authorize,
-    login,
     assertGreeting,
-    restart,
-    findTextViewByText,
-    getContainer,
     assertTextView
 } = require('../../../helpers/helper');
 
 describe('Docs test suite', () => {
+
+    // Test-case #2.1
     it('user should be able to observe driver license document (short info)', async () => {
         await authorize('0');
     
@@ -36,6 +34,7 @@ describe('Docs test suite', () => {
         await assertTextView('full_name_ua', 'Михальченко Віктор Олександрович');
     });
 
+    // Test-case #2.2
     it('user should be able to observe driver license document (full info)', async () => {
         const contextMenu = getElementByAccessibilityId('Контекстне меню')
         await contextMenu.click();

@@ -1,11 +1,4 @@
 const path = require('path');
-const fs = require('fs');
-
-function ensureDir(dir) {
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-    }
-}
 
 exports.config = {
     runner: 'local',
