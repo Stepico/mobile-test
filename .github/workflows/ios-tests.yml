@@ -146,7 +146,7 @@ jobs:
           echo "=== Verify: search for api2oss (old URL) ==="
           OLD_URL_COUNT=$(grep -r "api2oss\.diia\.gov\.ua" . --include="*.xcconfig" --include="*.swift" --include="*.plist" 2>/dev/null | wc -l || echo "0")
           if [ "$OLD_URL_COUNT" -gt 0 ]; then
-            echo "⚠️  WARNING: Found $OLD_URL_COUNT occurrences of old URL:"
+            echo "WARNING: Found $OLD_URL_COUNT occurrences of old URL:"
             grep -r "api2oss\.diia\.gov\.ua" . --include="*.xcconfig" --include="*.swift" --include="*.plist" 2>/dev/null || true
           else
             echo "✅ No old URL found - patch successful"
