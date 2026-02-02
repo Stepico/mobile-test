@@ -283,7 +283,7 @@ jobs:
         env:
           IOS_APP_PATH: ./ios-app/DiiaOpenSource.app
           IOS_DEVICE_UDID: ${{ steps.boot-sim.outputs.udid }}
-          SKIP_DOCS_TESTS: 'true'  # Skip documents tests в CI (documents unavailable)
+          # SKIP_DOCS_TESTS: 'true'  # Uncomment to skip documents tests if needed
         timeout-minutes: 60  # Збільшено timeout для великого app
 
       # ========================================
