@@ -121,7 +121,7 @@ Part 1 - Run the app locally
    # or: sudo gem install cocoapods
    ```
 8. Open the project in Xcode and create a simulator (Window → Devices and Simulators → Simulators) if there is none
-   *Note* Testing occurred on iPhone simulator (e.g. iPhone 16, iOS 18.x)
+   *Note* Testing occurred on iPhone simulator (e.g. iPhone 16, iOS 18.x))
 9. Wait for the project to build and run it (Product → Run or ⌘R)
 
 Expected result at the end of Part 1 - The app is opening in the iOS Simulator
