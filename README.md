@@ -86,16 +86,50 @@ then it means that it's already installed and no need for this command.
 
 14. Clone this repository to your device
 15. Install project dependencies
+16. Start Android Emulator (from Android Studio)
 
-Part 3 - Run tests locally
-20. Make sure appium server is running
-    appium
-21. Run tests
-    npx wdio run wdio.conf.js
-    *Note* In case you encounter error 'ERROR webdriver: WebDriverError: Neither ANDROID_HOME nor ANDROID_SDK_ROOT environment variable was exported' then you should set them as environment variables (for User)
-    21.1 Add a variable with Name: ANDROID_HOME and Value: <value_from_step_19.3_without_platform_tools>
-    21.2 Add a variable with Name: ANDROID_SDK_ROOT and Value: <value_from_step_19.3_without_platform_tools>
-    21.3 Restart terminal
+Confirm device
+
+```bash
+adb devices
+```
+*Note*: In case the output of the command is adb: command not found, then you likely need to add it to the PATH environment variable (for User). You can follow steps 17.1 - 17.4 below:
+
+17.1 Open Android Studio → File → Settings
+
+17.2 In the search bar write SDK
+
+17.3 Copy the Android SDK Location and add \platform-tools at the end
+
+Example:
+`C:\Users\<your_user>\AppData\Local\Android\Sdk\platform-tools`
+
+17.4 After saving changes restart Android Studio and all terminals
+
+## Part 3 – Run tests locally
+18. Make sure Appium server is running
+```bash
+appium
+```
+19. Run tests
+```bash
+npx wdio run wdio.conf.js
+```
+*Note*: In case you encounter error: ERROR webdriver: WebDriverError: Neither ANDROID_HOME nor ANDROID_SDK_ROOT environment variable was exported
+
+Then you should set them as environment variables (for User). You can follow steps 19.1 - 19.3 below:
+
+19.1 Add variable
+
+Name: ANDROID_HOME
+Value: `<value_from_step_17.3_without_platform_tools>`
+
+19.2 Add variable
+
+Name: ANDROID_SDK_ROOT
+Value: `<value_from_step_17.3_without_platform_tools>`
+
+19.3 Restart terminal
 
 ---
 
