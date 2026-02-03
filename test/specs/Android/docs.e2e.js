@@ -6,7 +6,7 @@ const {
     authorize,
     assertGreeting,
     assertTextView
-} = require('../../helper');
+} = require('../../../helpers/helper');
 
 describe('Docs test suite', () => {
 

@@ -9,7 +9,7 @@ const {
     assertPopup,
     restart,
     enterPinCode
-} = require('../../helper');
+} = require('../../../helpers/helper');
 
 describe('Auth test suite', () => {
 

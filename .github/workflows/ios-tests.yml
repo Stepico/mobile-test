@@ -1,0 +1,342 @@
+name: iOS App Tests
+
+on:
+
+  workflow_dispatch:
+    inputs:
+      ios_version:
+        description: 'iOS version for testing (default 18.5)'
+        required: false
+        default: '18.5'
+        type: string
+      device_name:
+        description: 'Device name (default iPhone 16 Pro)'
+        required: false
+        default: 'iPhone 16 Pro'
+        type: string
+      ios_app_tag:
+        description: 'iOS app tag from github (default 4.20.6)'
+        required: false
+        default: '4.20.6'
+        type: string
+
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ios-tests.yml'
+      - 'test/specs/iOS/**'
+      - 'wdio.ios.conf.js'
+      - 'scripts/ios/**'
+      - 'helpers/helper-iOS.js'
+
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ios-tests.yml'
+      - 'test/specs/iOS/**'
+      - 'wdio.ios.conf.js'
+      - 'scripts/ios/**'
+      - 'helpers/helper-iOS.js'
+
+jobs:
+  ios-tests:
+    name: iOS Tests (${{ inputs.device_name || 'iPhone 16 Pro' }} - iOS ${{ inputs.ios_version || '18.5' }})
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    env:
+
+      IOS_BUNDLE_ID: ua.gov.diia.opensource.app
+      IOS_DEVICE_NAME: ${{ inputs.device_name || 'iPhone 16 Pro' }}
+      IOS_PLATFORM_VERSION: ${{ inputs.ios_version || '18.5' }}
+      IOS_APP_TAG: ${{ inputs.ios_app_tag || '4.20.6' }}
+
+      CI: true
+      NODE_ENV: test
+
+      # Run all iOS specs (auth + documents). If BankID 404 in CI, set SKIP_AUTH_TESTS: 'true'
+      # SKIP_AUTH_TESTS: 'true'
+
+      APPIUM_LOG_LEVEL: info
+
+    steps:
+
+      
+      - name: Checkout test repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Select Xcode version
+        run: |
+          sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+          echo "Xcode path set"
+
+      - name: Xcode and simulator info
+        run: |
+          echo "=== Xcode version ==="
+          xcodebuild -version
+          echo ""
+          echo "=== Available iOS simulators ==="
+          xcrun simctl list devices available | grep -i "iphone" | head -15
+          echo ""
+          echo "=== Available iOS runtimes ==="
+          xcrun simctl list runtimes available | grep -i "ios"
+
+      - name: Install npm dependencies
+        run: |
+          echo "Installing npm packages..."
+
+          npm cache clean --force
+
+          rm -f package-lock.json
+          npm install
+          echo "npm dependencies installed"
+
+      - name: Cache Appium
+        id: cache-appium
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.appium
+            ~/.npm/_npx
+          key: ${{ runner.os }}-appium-${{ hashFiles('scripts/ios/ensure-appium.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-appium-
+
+      - name: Install Appium + XCUITest driver
+        run: |
+          echo "Installing Appium and XCUITest driver..."
+          bash scripts/ios/ensure-appium.sh
+          echo ""
+          echo "Appium ready"
+
+      - name: Checkout iOS source repo
+        uses: actions/checkout@v4
+        with:
+          repository: diia-open-source/ios-diia
+          ref: ${{ env.IOS_APP_TAG }}
+          path: ios-diia
+          fetch-depth: 1
+
+      - name: Patch config and code
+        run: |
+          cd ios-diia
+          
+          echo "=== Patching API URL: api2oss → api2s ==="
+
+          find . \( -name "*.xcconfig" -o -name "*.swift" -o -name "*.plist" -o -name "*.json" -o -name "*.xml" \) \
+            -type f \
+            -not -path "*/\.*" \
+            -not -path "*/Pods/*" \
+            -not -path "*/build/*" \
+            -exec sed -i '' 's/api2oss\.diia\.gov\.ua/api2s.diia.gov.ua/g' {} +
+          
+          echo "API URL replaced in all matched files"
+
+          echo ""
+          echo "=== Verify: search for api2oss (old URL) ==="
+          OLD_URL_COUNT=$(grep -r "api2oss\.diia\.gov\.ua" . --include="*.xcconfig" --include="*.swift" --include="*.plist" 2>/dev/null | wc -l || echo "0")
+          if [ "$OLD_URL_COUNT" -gt 0 ]; then
+            echo "Found $OLD_URL_COUNT occurrences of old URL:"
+            grep -r "api2oss\.diia\.gov\.ua" . --include="*.xcconfig" --include="*.swift" --include="*.plist" 2>/dev/null || true
+          else
+            echo "✅ No old URL found - patch successful"
+          fi
+
+          echo ""
+          echo "=== Verify: search for api2s (new URL) ==="
+          NEW_URL_COUNT=$(grep -r "api2s\.diia\.gov\.ua" . --include="*.xcconfig" --include="*.swift" --include="*.plist" 2>/dev/null | wc -l || echo "0")
+          echo "✅ Found $NEW_URL_COUNT occurrences of new URL"
+          if [ "$NEW_URL_COUNT" -gt 0 ]; then
+            echo "Examples:"
+            grep -r "api2s\.diia\.gov\.ua" . --include="*.xcconfig" --include="*.swift" --include="*.plist" 2>/dev/null | head -5 || true
+          fi
+          
+          echo ""
+          echo "=== Patch AppConfigurator.swift ==="
+
+          if [ -f "DiiaOpenSource/AppConfigurator.swift" ]; then
+
+            sed -i '' 's/, imageNameProvider: [^)]*//g' DiiaOpenSource/AppConfigurator.swift
+            sed -i '' 's/imageNameProvider: [^,)]*,\?//g' DiiaOpenSource/AppConfigurator.swift
+            echo "✅ AppConfigurator.swift patched"
+          else
+            echo "⚠️  AppConfigurator.swift not found"
+          fi
+
+      - name: Resolve and patch Swift Package Dependencies (before clean!)
+        run: |
+          echo "=== CRITICAL: SPM patch before clean build ==="
+          echo "Ensures SPM packages are patched before build uses them"
+          bash scripts/ios/patch-spm-dependencies.sh ios-diia ios-build
+          
+          echo ""
+          echo "✅ SPM packages patched - ready for clean build"
+
+      - name: Clear build cache for clean build
+        run: |
+          echo "=== Clearing build artifacts (NOT SPM packages!) ==="
+          cd ios-diia
+
+          if [ -d "build" ]; then
+            rm -rf build
+            echo "✅ Build directory cleared"
+          fi
+          
+          echo "⚠️  NOTE: isolated DerivedData will be cleared in build-app.sh"
+          echo "SPM packages remain patched"
+          echo ""
+          echo "✅ Ready for clean build with patched SPM"
+
+      - name: Build iOS app for Simulator
+        id: build-app
+        run: |
+          echo "Starting iOS app build..."
+          echo "IMPORTANT: Build runs AFTER API URL patch (api2oss → api2s)"
+          echo "CRITICAL: Clean build with isolated DerivedData for guaranteed fresh binary"
+          bash scripts/ios/build-app.sh
+          echo "Build completed"
+        env:
+          IOS_SOURCE_DIR: ./ios-diia
+        continue-on-error: false
+
+      - name: 🔍 CRITICAL VERIFICATION - API URL in binary
+        id: verify-app
+        run: |
+          echo "=== CRITICAL VERIFICATION ==="
+          echo "Verifying app binary contains api2s.diia.gov.ua"
+          echo "Required for BankID authorization!"
+          echo ""
+          
+          bash scripts/ios/verify-app-bundle.sh ./ios-app/DiiaOpenSource.app
+          
+          echo ""
+          echo "✅ VERIFICATION PASSED - App ready for BankID tests"
+        continue-on-error: false
+
+      - name: Start iOS Simulator
+        id: boot-sim
+        run: |
+          echo "Starting iOS Simulator..."
+          bash scripts/ios/boot-sim.sh
+          echo "Simulator started"
+        env:
+          OPEN_SIMULATOR: false
+
+      - name: Verify Simulator state
+        run: |
+          bash scripts/ios/verify-simulator.sh
+
+      - name: Pre-install app on Simulator
+        run: |
+          bash scripts/ios/install-app.sh "${{ steps.boot-sim.outputs.udid }}" ./ios-app/DiiaOpenSource.app
+
+      - name: Run iOS E2E tests
+        id: run-tests
+        run: |
+          echo "Running iOS tests..."
+          echo ""
+          echo "=== Configuration ==="
+          echo "App path: ${IOS_APP_PATH}"
+          echo "Device UDID: ${IOS_DEVICE_UDID}"
+          echo "Device name: ${IOS_DEVICE_NAME}"
+          echo "Platform version: ${IOS_PLATFORM_VERSION}"
+          echo ""
+          echo "=== Verify app before run ==="
+          ls -lh "${IOS_APP_PATH}"
+          echo ""
+          echo "=== Run tests ==="
+          npm run test:ios:ci
+        env:
+          IOS_APP_PATH: ./ios-app/DiiaOpenSource.app
+          IOS_DEVICE_UDID: ${{ steps.boot-sim.outputs.udid }}
+
+        timeout-minutes: 60
+
+      - name: Upload screenshots (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-screenshots-${{ github.run_number }}
+          path: artifacts/screenshots/**
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload page source (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-pagesources-${{ github.run_number }}
+          path: artifacts/pagesources/**
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload build logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-logs-${{ github.run_number }}
+          path: ios-build/xcodebuild.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload Appium logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-appium-logs-${{ github.run_number }}
+          path: |
+            appium.log
+            appium*.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload WebDriver logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-wdio-logs-${{ github.run_number }}
+          path: |
+            wdio-*.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Create job summary
+        if: always()
+        run: |
+          echo "## iOS Tests Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- **Device**: ${{ env.IOS_DEVICE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **iOS version**: ${{ env.IOS_PLATFORM_VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Bundle ID**: ${{ steps.verify-app.outputs.bundle_id || 'N/A' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **App size**: ${{ steps.verify-app.outputs.app_size || 'N/A' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### Test results" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.run-tests.outcome }}" == "success" ]; then
+            echo "**All tests passed**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Tests finished with errors**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "See artifacts for details:" >> $GITHUB_STEP_SUMMARY
+            echo "- Error screenshots" >> $GITHUB_STEP_SUMMARY
+            echo "- Page source files" >> $GITHUB_STEP_SUMMARY
+            echo "- Build and Appium logs" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### Xcode Environment" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          xcodebuild -version >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
