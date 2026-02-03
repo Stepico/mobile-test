@@ -123,10 +123,12 @@ Then you should set them as environment variables (for User). You can follow ste
 
 Name: ANDROID_HOME
 Value: `<value_from_step_17.3_without_platform_tools>`
+
 19.2 Add variable
 
 Name: ANDROID_SDK_ROOT
 Value: `<value_from_step_17.3_without_platform_tools>`
+
 19.3 Restart terminal
 
 ---
