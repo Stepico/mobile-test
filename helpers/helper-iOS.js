@@ -1810,7 +1810,7 @@ async function tapSmart(x, y, description = '', options = {}) {
         const windowSize = await driver.getWindowRect();
         logStep('tapSmart', `Window size: ${windowSize.width}x${windowSize.height}`);
         if (roundedX < 0 || roundedX > windowSize.width || roundedY < 0 || roundedY > windowSize.height) {
-            logStep('tapSmart', `WARNING: Coordinates (${roundedX}, ${roundedY}) may be outside viewport`);
+            logStep('tapSmart', `Coordinates (${roundedX}, ${roundedY}) may be outside viewport`);
         }
     } catch (e) {
         logStep('tapSmart', `Could not get window size: ${e.message}`);

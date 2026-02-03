@@ -80,7 +80,6 @@ describe('Auth test suite', () => {
         console.log(`[INFO] Current state after setupTestState: ${state}`);
         
         if (state !== SCREEN_STATE.PIN_LOGIN) {
-            console.log(`[WARNING] Expected PIN_LOGIN but got ${state}, ensuring correct state...`);
             await ensureOnPinLoginScreen(15000);
         }
         
@@ -99,7 +98,6 @@ describe('Auth test suite', () => {
         console.log(`[INFO] Current state after setupTestState: ${state}`);
         
         if (state !== SCREEN_STATE.PIN_LOGIN) {
-            console.log(`[WARNING] Expected PIN_LOGIN but got ${state}, ensuring correct state...`);
             await ensureOnPinLoginScreen(15000);
         }
         
@@ -267,7 +265,6 @@ describe('Auth test suite', () => {
         console.log(`[INFO] Current state after setupTestState: ${state}`);
         
         if (state !== SCREEN_STATE.PIN_LOGIN) {
-            console.log(`[WARNING] Expected PIN_LOGIN but got ${state}, ensuring correct state...`);
             await ensureOnPinLoginScreen(15000);
         }
         
